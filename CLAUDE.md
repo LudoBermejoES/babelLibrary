@@ -55,32 +55,25 @@ git add package.json web/package.json Cargo.toml Cargo.lock
 
 ## On push to main
 
-Tag every version bump so the repo's tag history stays accurate:
+Tag every version bump so the repo's tag history stays accurate. **In this
+repo, `git push --follow-tags` has reliably failed to push a tag created
+moments earlier in the same session** (reproduced twice) — it pushes the
+commit and reports success, with no `* [new tag]` line and no error, but the
+tag never reaches the remote. Don't rely on it here. Push the tag explicitly
+instead:
 
 ```bash
 VERSION=$(grep '"version"' package.json | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')
 git tag "v${VERSION}"
-git push --follow-tags
+git push
+git push origin "v${VERSION}"
 ```
 
-`git push --follow-tags` pushes the commits and the new tag together in one
-step (a plain `git push origin "v${VERSION}"` also works, but requires two
-separate pushes — one for commits, one for the tag).
-
-**Verify the tag actually landed.** `--follow-tags` has been observed to push
-the commit but silently skip a tag created moments earlier in the same
-session — the `git push` output shows only the commit ref update, with no
-`* [new tag]` line, and it does not error. Don't assume success from the
-absence of an error. After pushing, confirm with:
+Verify it actually landed (don't assume success from the absence of an
+error):
 
 ```bash
 git ls-remote --tags origin | grep "v${VERSION}"
-```
-
-If it's missing, push the tag explicitly:
-
-```bash
-git push origin "v${VERSION}"
 ```
 
 **Important — tagging does NOT trigger a build.** `.github/workflows/ci.yml`
