@@ -15,11 +15,11 @@
 
 ## 2. Book catalog (M1 — doc [03](../../../doc/03-data-and-api.md))
 
-- [ ] 2.1 RED: write failing server integration tests (fixture DB per test): migration idempotence, `GET /api/books` id order + camelCase shape, nulls for missing optional fields, `GET /api/books/{id}` 200 + 404 JSON error shape, `/healthz` book count
-- [ ] 2.2 GREEN: implement schema + idempotent migration (env/flag config, read-only reopen), both book endpoints (10k cap with warning, per-request reads), and `/healthz`, until 2.1 passes
-- [ ] 2.3 RED→GREEN: failing tests for EPUB serving (`application/epub+zip`, `Accept-Ranges: bytes`, external absolute URLs passed through untouched) → implement `/epubs` static serving
-- [ ] 2.4 Seed script (Gutenberg list in doc 03, `--with-broken` flag) with its own tests: idempotence (re-run safe), row shape, broken row present only with the flag
-- [ ] 2.5 REFACTOR: extract row→JSON mapping, error helper; suite stays green; clippy clean
+- [x] 2.1 RED: write failing server integration tests (fixture DB per test): migration idempotence, `GET /api/books` id order + camelCase shape, nulls for missing optional fields, `GET /api/books/{id}` 200 + 404 JSON error shape, `/healthz` book count
+- [x] 2.2 GREEN: implement schema + idempotent migration (env/flag config, read-only reopen), both book endpoints (10k cap with warning, per-request reads), and `/healthz`, until 2.1 passes
+- [x] 2.3 RED→GREEN: failing tests for EPUB serving (`application/epub+zip`, `Accept-Ranges: bytes`, external absolute URLs passed through untouched) → implement `/epubs` static serving
+- [x] 2.4 Seed script (Gutenberg list in doc 03, `--with-broken` flag) with its own tests: idempotence (re-run safe), row shape, broken row present only with the flag
+- [x] 2.5 REFACTOR: extract row→JSON mapping, error helper; suite stays green; clippy clean
 
 ## 3. Procedural layout generator (M2 — doc [04](../../../doc/04-wasm-generator.md))
 

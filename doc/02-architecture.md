@@ -39,11 +39,13 @@ Rationale (researched July 2026, see design.md in the OpenSpec change for altern
 | Vite wasm loading | `vite-plugin-wasm` + `build.target: 'esnext'` | 3.6.x |
 | EPUB rendering | `foliate-js` (vendored source, not npm) | pinned commit, see `web/src/reader/vendor/VENDORED.md` |
 | Server | Axum + tokio + tower-http | Axum 0.8.x |
-| DB access | rusqlite (bundled SQLite) | 0.37.x |
+| DB access | rusqlite (bundled SQLite) | 0.32.x (see note) |
 | Asset pipeline | @gltf-transform/cli (meshopt) | 4.4.x |
 | Rust | stable + `wasm32-unknown-unknown` | pin via `rust-toolchain.toml` |
 
 Escape hatch if wasm-pack misbehaves (slow release cadence): `cargo build --target wasm32-unknown-unknown` + `wasm-bindgen-cli` directly. Trunk is not used (it targets all-Rust frontends).
+
+`rusqlite` pinned to `0.32.x` rather than the originally planned `0.37.x`: newer `libsqlite3-sys` releases (bundled with `rusqlite` ≥ 0.34) use the unstable `cfg_select` macro in their build script, which fails under the Homebrew-packaged `cargo`/`rustc` 1.94.1 used for native builds in this repo (see design D6 / D1 on the toolchain split — wasm builds use a separate rustup-managed 1.96.x toolchain, native builds intentionally stay on Homebrew's). Revisit the pin once Homebrew's Rust catches up or `libsqlite3-sys` stops requiring the unstable feature.
 
 ## Repository layout
 

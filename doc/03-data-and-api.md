@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS books (
     title       TEXT    NOT NULL,
     author      TEXT    NOT NULL,
     synopsis    TEXT,                          -- nullable
-    epub_url    TEXT    NOT NULL,              -- '/epubs/<file>.epub' or absolute http(s) URL
+    epub_url    TEXT    NOT NULL UNIQUE,       -- '/epubs/<file>.epub' or absolute http(s) URL
     spine_color TEXT,                          -- optional '#RRGGBB' hint; null → derived from id
     page_count  INTEGER,                       -- optional, informational
     created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
@@ -25,7 +25,7 @@ CREATE INDEX IF NOT EXISTS idx_books_author ON books(author, title);
 
 Conventions:
 
-- **`epub_url`** — two forms only. Server-relative (`/epubs/moby-dick.epub`): the file must exist in `BABEL_EPUB_DIR`; served by us. Absolute (`https://…`): passed through untouched; the remote host's CORS policy applies (see doc 07).
+- **`epub_url`** — two forms only. Server-relative (`/epubs/moby-dick.epub`): the file must exist in `BABEL_EPUB_DIR`; served by us. Absolute (`https://…`): passed through untouched; the remote host's CORS policy applies (see doc 07). `UNIQUE` so the idempotent seed script can upsert by URL without duplicating rows on re-run.
 - **`spine_color`** — `#RRGGBB`. Invalid values are treated as null (logged, not fatal).
 - Deleting/inserting rows changes the layout (placement is a function of the catalog) — acceptable in v1.
 - The server opens the DB **read-only** (`SQLITE_OPEN_READ_ONLY`) after migration. Catalog edits happen with any external SQLite tool. The server re-reads per request (no cache) — SQLite is more than fast enough at this scale, and it means catalog edits appear on next page load without a restart.
@@ -117,12 +117,21 @@ export interface BookMeta {
 
 ## Seeding
 
-`scripts/seed.ts` (run with `node --experimental-strip-types` or `tsx`; alternatively a `cargo xtask` — decide at implementation, the contract is the output):
+`scripts/seed.ts`, run via `npm run seed` (`node --experimental-strip-types scripts/seed.ts` — no build step, no `tsx` dependency; Node 22+ strips TypeScript types natively). Uses Node's built-in `node:sqlite` (`DatabaseSync`, stable since Node 22.5, still flagged experimental — acceptable for a dev-time script that never runs in production; the deployed server uses `rusqlite` in Rust, not this module).
+
+Split into two independently testable halves:
+
+1. `downloadEpub()` — fetches each Gutenberg URL into `data/epubs/`, skipping files that already exist (idempotent), with up to 3 attempts per file (Gutenberg has been observed to drop large-file transfers under Node's `fetch`/undici; `curl` does not reproduce this, so it's undici-specific — retrying is the pragmatic fix over switching HTTP clients).
+2. `buildCatalog(db, books)` — pure function, upserts rows into an already-open `DatabaseSync` by `epub_url` (`ON CONFLICT (epub_url) DO UPDATE`), so re-running never duplicates rows. This is the unit-tested half (`web/tests/seed.test.ts`, run through `web/`'s vitest — no network, an in-memory `:memory:` database, and a fixed fake book list). The network-dependent `main()` orchestration (download all 8, then call `buildCatalog`) is exercised by the documented manual bootstrap, not an automated test.
+
+Behavior:
 
 1. Ensures `data/epubs/` exists.
-2. Downloads ~8 public-domain EPUBs from Project Gutenberg (fixed URL list checked into the script: Moby-Dick, Frankenstein, Pride and Prejudice, Dracula, The Time Machine, Alice in Wonderland, The Odyssey, Metamorphosis).
-3. Creates/overwrites `data/books.sqlite` with the schema above and one row per file (title/author/synopsis hard-coded in the script; synopsis 1–2 sentences).
-4. Adds **one deliberately broken row** (`/epubs/does-not-exist.epub`) guarded behind `--with-broken`, used by the reader failure test (doc 09).
-5. Idempotent: safe to re-run; skips downloads that already exist.
+2. Downloads 8 public-domain EPUBs from Project Gutenberg (fixed list in `GUTENBERG_BOOKS`: Moby-Dick, Frankenstein, Pride and Prejudice, Dracula, The Time Machine, Alice in Wonderland, The Odyssey, Metamorphosis).
+3. Upserts `data/books.sqlite` with the schema above, one row per book (title/author/synopsis hard-coded in the script; synopsis 1–2 sentences).
+4. Adds **one deliberately broken row** (`BROKEN_ROW`, `/epubs/does-not-exist.epub`) when run with `--with-broken`, used by the reader failure test (doc 09).
+5. Idempotent end to end: safe to re-run; skips downloads that already exist, upserts (not inserts) catalog rows.
 
-`data/` is gitignored except `data/.gitkeep`; the seed script is the reproducible path to content. Gutenberg files are public domain — note the source URL per row in a `source_url` comment column if desired (not required v1).
+`data/` is gitignored except `data/.gitkeep`; the seed script is the reproducible path to content. Gutenberg files are public domain.
+
+`scripts/` has its own minimal `tsconfig.json` (Node types, no DOM lib) so editor tooling resolves it standalone; `web/tsconfig.test.json` additionally includes `../scripts` so the real typecheck (`npm run typecheck:test` in `web/`) covers it too, since `seed.test.ts` imports directly from it.

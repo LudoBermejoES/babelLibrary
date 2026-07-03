@@ -36,7 +36,7 @@ npm run dev                     # vite; proxies /api and /epubs → :8080
 | `dev` | vite dev server |
 | `wasm` | wasm-pack build (dev profile) |
 | `wasm:release` | wasm-pack build --release (runs wasm-opt) |
-| `seed` | node scripts/seed.ts |
+| `seed` | `node --experimental-strip-types scripts/seed.ts` (add `-- --with-broken` for the failure-test row) |
 | `assets` | gltf-transform optimize over `web/assets-src/` → `web/public/assets/` |
 | `build` | full production build (below) |
 | `preview` | serve the production bundle via the release server locally |

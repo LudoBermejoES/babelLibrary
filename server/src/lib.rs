@@ -1,3 +1,2 @@
-pub fn placeholder_ready() -> bool {
-    true
-}
+pub mod app;
+pub mod db;

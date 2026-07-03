@@ -1,14 +1,20 @@
 {
   "name": "babel-library",
   "private": true,
-  "version": "0.1.2",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "wasm": "scripts/wasm-build.sh",
     "wasm:release": "scripts/wasm-build.sh --release",
     "dev": "npm run wasm && npm --prefix web run dev",
     "build": "scripts/build.sh",
+    "seed": "node --experimental-strip-types scripts/seed.ts",
+    "typecheck:scripts": "tsc -p scripts/tsconfig.json",
     "test": "npm --prefix web test",
     "e2e": "npm --prefix web run e2e"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.0",
+    "typescript": "~6.0.2"
   }
 }
