@@ -99,10 +99,16 @@ Two workflows, deliberately separate — `.github/workflows/ci.yml` runs on ever
 
 1. `cargo fmt --all --check` + `cargo clippy --workspace --all-targets -- -D warnings`
 2. `cargo test --workspace` (babel-gen + server)
-3. wasm build (`scripts/wasm-build.sh --release`), uploaded as an artifact for the frontend/e2e jobs
+3. wasm build (`scripts/wasm-build.sh --release`), uploaded as an artifact for the frontend job
 4. `tsc` + `vitest run` (`npm test` in `web/`)
 5. `npm run build` (production build must succeed)
-6. Playwright suite (chromium headless) against the dev server
+
+Playwright is **not** run in CI: it needs a live Axum server plus a seeded
+`data/books.sqlite` (gitignored, absent on a fresh checkout — seeding
+downloads real EPUBs from Project Gutenberg, which is slow/flaky infra to
+run on every push). Run `npm run seed && npm run e2e` locally before pushing
+UI-affecting changes; it's the release checklist's job to catch what CI
+can't.
 
 **`release.yml` (manual `workflow_dispatch`, or a published GitHub Release):**
 
