@@ -86,8 +86,55 @@ describe('GalleryStreamer', () => {
 
     const expected = neededGallerySet(graph.galleries, 0);
     expect(streamer.liveGalleryIndices).toEqual(expected);
-    for (const index of expected) {
+    for (const index of streamer.fullyBuiltGalleryIndices) {
       expect(scene.getObjectByName(`gallery-${index}`)).toBeDefined();
     }
+  });
+
+  it('builds a vertical neighbor as a shaft-glimpse (not fully), and upgrades it when it becomes current', async () => {
+    const books = fakeBooks(2500);
+    const { graph, getGallery } = await createLibrary(11n, books);
+    const withVertical = graph.galleries.find((g) => g.floorAbove !== null || g.floorBelow !== null);
+    expect(withVertical).toBeDefined();
+    const verticalNeighborIndex = (withVertical!.floorAbove ?? withVertical!.floorBelow)!;
+
+    const scene = new THREE.Scene();
+    const streamer = new GalleryStreamer(scene, graph, getGallery);
+    streamer.update(withVertical!.index);
+
+    expect(streamer.liveGalleryIndices.has(verticalNeighborIndex)).toBe(true);
+    expect(streamer.fullyBuiltGalleryIndices.has(verticalNeighborIndex)).toBe(false);
+    expect(scene.getObjectByName(`shaft-glimpse-${verticalNeighborIndex}`)).toBeDefined();
+    expect(scene.getObjectByName(`gallery-${verticalNeighborIndex}`)).toBeUndefined();
+
+    streamer.update(verticalNeighborIndex);
+
+    expect(streamer.fullyBuiltGalleryIndices.has(verticalNeighborIndex)).toBe(true);
+    expect(scene.getObjectByName(`gallery-${verticalNeighborIndex}`)).toBeDefined();
+    expect(scene.getObjectByName(`shaft-glimpse-${verticalNeighborIndex}`)).toBeUndefined();
+  });
+
+  it('downgrades a fully-built gallery to a shaft-glimpse once it is only a vertical neighbor again', async () => {
+    const books = fakeBooks(2500);
+    const { graph, getGallery } = await createLibrary(11n, books);
+    const withVertical = graph.galleries.find((g) => g.floorAbove !== null || g.floorBelow !== null)!;
+    const verticalNeighborIndex = (withVertical.floorAbove ?? withVertical.floorBelow)!;
+
+    const scene = new THREE.Scene();
+    const streamer = new GalleryStreamer(scene, graph, getGallery);
+
+    // Start at withVertical.index (fully built, since it's "current")...
+    streamer.update(withVertical.index);
+    expect(streamer.fullyBuiltGalleryIndices.has(withVertical.index)).toBe(true);
+
+    // ...then walk into its vertical neighbor. withVertical.index is now
+    // only a vertical neighbor of the new current gallery — it must
+    // downgrade to a glimpse, not stay fully built forever (that would
+    // blow the draw-call budget).
+    streamer.update(verticalNeighborIndex);
+
+    expect(streamer.fullyBuiltGalleryIndices.has(withVertical.index)).toBe(false);
+    expect(scene.getObjectByName(`shaft-glimpse-${withVertical.index}`)).toBeDefined();
+    expect(scene.getObjectByName(`gallery-${withVertical.index}`)).toBeUndefined();
   });
 });

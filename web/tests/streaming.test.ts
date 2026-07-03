@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { neededGallerySet } from '../src/scene/streaming';
+import { neededGalleryMembership } from '../src/scene/streaming';
 import type { LibraryGallery } from '../src/wasm';
 
 function gallery(overrides: Partial<LibraryGallery>): LibraryGallery {
@@ -16,35 +16,57 @@ function gallery(overrides: Partial<LibraryGallery>): LibraryGallery {
   };
 }
 
-describe('neededGallerySet', () => {
-  it('includes only the current gallery when it has no neighbors', () => {
+describe('neededGalleryMembership', () => {
+  it('includes only the current gallery (full) when it has no neighbors', () => {
     const galleries = [gallery({ index: 0 })];
-    expect(neededGallerySet(galleries, 0)).toEqual(new Set([0]));
+    const membership = neededGalleryMembership(galleries, 0);
+    expect(membership.full).toEqual(new Set([0]));
+    expect(membership.glimpse).toEqual(new Set());
   });
 
-  it('includes the horizontal neighbor', () => {
+  it('treats the horizontal neighbor as full (walkable through the vestibule)', () => {
     const galleries = [
       gallery({ index: 0, horizontalNeighbor: 1 }),
       gallery({ index: 1, horizontalNeighbor: 0 }),
     ];
-    expect(neededGallerySet(galleries, 0)).toEqual(new Set([0, 1]));
+    const membership = neededGalleryMembership(galleries, 0);
+    expect(membership.full).toEqual(new Set([0, 1]));
+    expect(membership.glimpse).toEqual(new Set());
   });
 
-  it('includes floor-above and floor-below neighbors', () => {
+  it('treats floor-above/floor-below neighbors as glimpse-only (shaft-visible, not walked into yet)', () => {
     const galleries = [
       gallery({ index: 0, floorAbove: 1, floorBelow: 2 }),
       gallery({ index: 1, floorBelow: 0 }),
       gallery({ index: 2, floorAbove: 0 }),
     ];
-    expect(neededGallerySet(galleries, 0)).toEqual(new Set([0, 1, 2]));
+    const membership = neededGalleryMembership(galleries, 0);
+    expect(membership.full).toEqual(new Set([0]));
+    expect(membership.glimpse).toEqual(new Set([1, 2]));
   });
 
-  it('combines horizontal and vertical neighbors', () => {
+  it('combines a full horizontal neighbor with glimpse-only vertical neighbors', () => {
     const galleries = [
       gallery({ index: 0, horizontalNeighbor: 1, floorAbove: 2 }),
       gallery({ index: 1, horizontalNeighbor: 0 }),
       gallery({ index: 2, floorBelow: 0 }),
     ];
-    expect(neededGallerySet(galleries, 0)).toEqual(new Set([0, 1, 2]));
+    const membership = neededGalleryMembership(galleries, 0);
+    expect(membership.full).toEqual(new Set([0, 1]));
+    expect(membership.glimpse).toEqual(new Set([2]));
+  });
+
+  it('never puts the same gallery in both full and glimpse sets', () => {
+    // A gallery could in principle be both the horizontal neighbor of one
+    // gallery and a vertical neighbor's target in a denser graph; full
+    // always wins since a fully-built gallery already shows through the
+    // shaft (no need for a redundant glimpse).
+    const galleries = [
+      gallery({ index: 0, horizontalNeighbor: 1, floorAbove: 1 }),
+      gallery({ index: 1, horizontalNeighbor: 0, floorBelow: 0 }),
+    ];
+    const membership = neededGalleryMembership(galleries, 0);
+    expect(membership.full).toEqual(new Set([0, 1]));
+    expect(membership.glimpse).toEqual(new Set());
   });
 });

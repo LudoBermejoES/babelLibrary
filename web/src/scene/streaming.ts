@@ -2,23 +2,40 @@ import * as THREE from 'three';
 import type { GalleryBuffers, LibraryConfig, LibraryGallery } from '../wasm';
 import { buildGalleryArchitecture } from './gallery';
 import { buildGalleryInstances } from './instancing';
+import { buildShaftGlimpse } from './shaft-visibility';
 import { buildShaftRailing, buildVestibule, type VestibuleCounts } from './vestibule';
 
+export interface GalleryMembership {
+  /** Fully built (architecture + shelves + books + vestibule): the current gallery and its horizontal neighbor — both walkable without a floor change. */
+  full: Set<number>;
+  /** Shaft-visible only (floor/ceiling + railing, no shelves/books): floor-above/below neighbors, glimpsed through the shaft but not yet walked into (doc 05 "shaft-visible only" streaming tier). */
+  glimpse: Set<number>;
+}
+
 /**
- * The set of gallery indices that must be present in the scene for a given
- * "current gallery": itself, its horizontal neighbor (through the
- * vestibule), and its vertical neighbors (floor above/below, if present) —
- * doc 05 "Gallery streaming". Pure function of the graph, independent of
- * Three.js, so it's cheaply unit-testable.
+ * Gallery membership for a given "current gallery" — doc 05 "Gallery
+ * streaming". Pure function of the graph, independent of Three.js, so it's
+ * cheaply unit-testable. A gallery already in `full` is never duplicated
+ * into `glimpse` (a fully-built gallery already satisfies "visible through
+ * the shaft").
  */
-export function neededGallerySet(galleries: LibraryGallery[], currentIndex: number): Set<number> {
+export function neededGalleryMembership(galleries: LibraryGallery[], currentIndex: number): GalleryMembership {
   const current = galleries[currentIndex];
-  const needed = new Set<number>([currentIndex]);
-  if (!current) return needed;
-  if (current.horizontalNeighbor !== null) needed.add(current.horizontalNeighbor);
-  if (current.floorAbove !== null) needed.add(current.floorAbove);
-  if (current.floorBelow !== null) needed.add(current.floorBelow);
-  return needed;
+  const full = new Set<number>([currentIndex]);
+  const glimpse = new Set<number>();
+  if (!current) return { full, glimpse };
+
+  if (current.horizontalNeighbor !== null) full.add(current.horizontalNeighbor);
+  if (current.floorAbove !== null && !full.has(current.floorAbove)) glimpse.add(current.floorAbove);
+  if (current.floorBelow !== null && !full.has(current.floorBelow)) glimpse.add(current.floorBelow);
+
+  return { full, glimpse };
+}
+
+/** Convenience union of `full` and `glimpse` — every gallery index that must have *some* scene presence, regardless of fidelity tier. */
+export function neededGallerySet(galleries: LibraryGallery[], currentIndex: number): Set<number> {
+  const { full, glimpse } = neededGalleryMembership(galleries, currentIndex);
+  return new Set([...full, ...glimpse]);
 }
 
 const BUFFER_CACHE_SIZE = 4;
@@ -36,11 +53,14 @@ export interface StreamedGalleryCounts {
  * galleries' buffers cached so back-and-forth crossing is cheap (doc 05
  * "GalleryCache"). Materials are never disposed (shared, process-lifetime).
  */
+type Fidelity = 'full' | 'glimpse';
+
 export class GalleryStreamer {
   private readonly scene: THREE.Scene;
   private readonly graph: { galleries: LibraryGallery[]; config: LibraryConfig };
   private readonly getGallery: (index: number) => GalleryBuffers;
   private readonly liveGroups = new Map<number, THREE.Group>();
+  private readonly liveFidelity = new Map<number, Fidelity>();
   private readonly liveBuffers = new Map<number, GalleryBuffers>();
   private readonly bufferCache = new Map<number, GalleryBuffers>();
   private readonly instanceCounts = new Map<number, StreamedGalleryCounts>();
@@ -56,9 +76,16 @@ export class GalleryStreamer {
     this.getGallery = getGallery;
   }
 
-  /** Which gallery indices currently have a live (built) scene group. */
+  /** Which gallery indices currently have a live (built) scene group, at any fidelity. */
   get liveGalleryIndices(): ReadonlySet<number> {
     return new Set(this.liveGroups.keys());
+  }
+
+  /** Which gallery indices are currently fully built (shelves/books/vestibule), as opposed to shaft-glimpse-only. */
+  get fullyBuiltGalleryIndices(): ReadonlySet<number> {
+    const full = new Set<number>();
+    for (const [index, fidelity] of this.liveFidelity) if (fidelity === 'full') full.add(index);
+    return full;
   }
 
   instanceCountsFor(index: number): StreamedGalleryCounts | undefined {
@@ -69,21 +96,42 @@ export class GalleryStreamer {
     return this.vestibuleCounts.get(index);
   }
 
-  /** Recomputes membership for `currentIndex` and builds/disposes to match. No-op if the needed set hasn't changed (doc 05 frame-loop note). */
+  /** Recomputes membership for `currentIndex` and builds/disposes/upgrades/downgrades to match. No-op if nothing changed (doc 05 frame-loop note). */
   update(currentIndex: number): void {
-    const needed = neededGallerySet(this.graph.galleries, currentIndex);
+    const { full, glimpse } = neededGalleryMembership(this.graph.galleries, currentIndex);
 
     for (const index of [...this.liveGroups.keys()]) {
-      if (!needed.has(index)) this.dispose(index);
+      if (!full.has(index) && !glimpse.has(index)) this.dispose(index);
     }
-    for (const index of needed) {
-      if (!this.liveGroups.has(index)) this.build(index);
+    for (const index of full) {
+      const current = this.liveFidelity.get(index);
+      if (current === undefined || current === 'glimpse') {
+        if (current === 'glimpse') this.dispose(index); // upgrade: rebuild at full fidelity
+        this.build(index, 'full');
+      }
+    }
+    for (const index of glimpse) {
+      const current = this.liveFidelity.get(index);
+      if (current === undefined) {
+        this.build(index, 'glimpse');
+      } else if (current === 'full') {
+        this.dispose(index); // downgrade: no longer adjacent, only shaft-visible
+        this.build(index, 'glimpse');
+      }
     }
   }
 
-  private build(index: number): void {
+  private build(index: number, fidelity: Fidelity): void {
     const gallery = this.graph.galleries[index];
     if (!gallery) return;
+
+    if (fidelity === 'glimpse') {
+      const group = buildShaftGlimpse(gallery, this.graph.config);
+      this.scene.add(group);
+      this.liveGroups.set(index, group);
+      this.liveFidelity.set(index, 'glimpse');
+      return;
+    }
 
     const buffers = this.bufferCache.get(index) ?? this.getGallery(index);
     this.bufferCache.delete(index);
@@ -100,6 +148,7 @@ export class GalleryStreamer {
 
     this.scene.add(architecture);
     this.liveGroups.set(index, architecture);
+    this.liveFidelity.set(index, 'full');
     this.liveBuffers.set(index, buffers);
     this.instanceCounts.set(index, { books: bookCount, shelves: shelfCount, lamps: lampCount });
   }
@@ -118,6 +167,7 @@ export class GalleryStreamer {
 
     this.scene.remove(group);
     this.liveGroups.delete(index);
+    this.liveFidelity.delete(index);
     this.instanceCounts.delete(index);
     this.vestibuleCounts.delete(index);
 

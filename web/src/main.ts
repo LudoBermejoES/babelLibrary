@@ -2,8 +2,9 @@ import './style.css';
 import { createRenderer, isWebGL2Available } from './scene/renderer';
 import { GalleryStreamer } from './scene/streaming';
 import { fetchBooks } from './api/books';
+import type { BookMeta } from './api/types';
 import { createLibrary } from './wasm';
-import { installDebugHook } from './debug';
+import { installDebugHook, isE2eMode } from './debug';
 
 export function placeholderReady(): boolean {
   return true;
@@ -31,6 +32,35 @@ function showWebglUnavailable(app: HTMLDivElement): void {
   app.appendChild(panel);
 }
 
+/**
+ * Test-only catalog padding: `?e2e&e2eBookCount=N` synthesizes ids beyond
+ * the real catalog so e2e tests can exercise multi-floor layouts (task 4.6)
+ * without needing a large seeded fixture DB. Inert without `?e2e` — the
+ * override is parsed but never applied unless e2e mode is on, so production
+ * boots are unaffected regardless of query string.
+ */
+function applyE2eBookCountOverride(books: BookMeta[]): BookMeta[] {
+  if (!isE2eMode()) return books;
+  const raw = new URLSearchParams(window.location.search).get('e2eBookCount');
+  if (raw === null) return books;
+  const targetCount = Number(raw);
+  if (!Number.isFinite(targetCount) || targetCount <= books.length) return books;
+
+  const synthetic: BookMeta[] = [...books];
+  for (let id = books.length + 1; synthetic.length < targetCount; id++) {
+    synthetic.push({
+      id,
+      title: `Synthetic Book ${id}`,
+      author: 'e2e',
+      synopsis: null,
+      epubUrl: '',
+      spineColor: null,
+      pageCount: null,
+    });
+  }
+  return synthetic;
+}
+
 export async function boot(): Promise<void> {
   const app = document.querySelector<HTMLDivElement>('#app');
   if (!app) throw new Error('#app container missing');
@@ -44,7 +74,7 @@ export async function boot(): Promise<void> {
   camera.position.set(0, 1.7, 3);
 
   const seed = seedFromUrl();
-  const books = await fetchBooks();
+  const books = applyE2eBookCountOverride(await fetchBooks());
   const { graph, getGallery } = await createLibrary(seed, books);
 
   const streamer = new GalleryStreamer(scene, graph, getGallery);

@@ -13,6 +13,8 @@ export interface BabelDebugHook {
   vestibuleMeshCountsForGallery(index: number): { mirrors: number; closets: number };
   shaftRailingMeshCount(index: number): number;
   staircaseMatchesFlags(index: number): boolean;
+  floorNeighborOf(index: number, direction: 'above' | 'below'): number | null;
+  shaftGlimpseExists(galleryIndex: number): boolean;
 }
 
 declare global {
@@ -73,6 +75,14 @@ export function installDebugHook(
       // 1 mirror + 2 closets always; a 4th child is the staircase.
       const hasStaircaseMesh = meshCount > 3;
       return hasStaircaseMesh === expectsStaircase;
+    },
+    floorNeighborOf(index: number, direction: 'above' | 'below'): number | null {
+      const gallery = graph.galleries[index];
+      if (!gallery) return null;
+      return direction === 'above' ? gallery.floorAbove : gallery.floorBelow;
+    },
+    shaftGlimpseExists(galleryIndex: number): boolean {
+      return scene.getObjectByName(`shaft-glimpse-${galleryIndex}`) !== undefined;
     },
   };
 }
