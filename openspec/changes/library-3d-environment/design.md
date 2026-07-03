@@ -1,0 +1,125 @@
+# Design: library-3d-environment
+
+## Context
+
+Greenfield project (this repo contains only OpenSpec scaffolding). Goal: a library — an interconnected set of galleries full of books — walkable in first-person from a browser. The books are real: a SQLite catalog holds each book's title, author, synopsis, and the URL of its EPUB; clicking a book in the 3D scene opens that EPUB in an in-browser reader. Built with Rust and Three.js.
+
+Research (July 2026) verified the current ecosystem: three.js r185 (`three@0.185.1`), Vite 8, wasm-bindgen 0.2.126, wasm-pack 0.15.0, vite-plugin-wasm 3.6.0, Rapier (`@dimforge/rapier3d-compat` 0.19.3 / `rapier3d` crate 0.33.0), gltf-transform 4.4.1, meshoptimizer 1.2.0.
+
+## Goals / Non-Goals
+
+**Goals:**
+- Walkable first-person 3D library at 60 FPS target / 30 FPS floor on a mid-range laptop.
+- Books driven by a SQLite catalog (title, author, synopsis, EPUB URL); shelves populated from it, EPUBs readable in an overlay.
+- Rust in two roles it is genuinely good at: an Axum server owning the catalog and asset serving, and a wasm module doing deterministic library layout generation in the client.
+- One-command build; containerized deployment to any host.
+- Simple, debuggable interop: coarse calls, flat typed-array buffers across the JS↔wasm boundary.
+
+**Non-Goals:**
+- Multiplayer, accounts, catalog editing UI, or reading-progress persistence (v1 is read-only).
+- Truly infinite world — the library is sized to the catalog.
+- Full rigid-body physics (only player collision).
+- WebGPU/TSL renderer, wasm threads/SharedArrayBuffer, mobile/touch controls — deferred.
+
+## Decisions
+
+### D1 — Architecture: three tiers, each in its natural language
+- **Rust server (Axum)**: reads the SQLite catalog (`rusqlite`, read-only in v1), exposes `GET /api/books` and `GET /api/books/{id}`, serves locally hosted EPUBs (`application/epub+zip`, range requests) and, in production, the built frontend (`tower-http` `ServeDir` sets `application/wasm` correctly).
+- **Rust wasm module** (wasm-bindgen/wasm-pack): given the ordered catalog (ids + presentation hints) and a seed, generates the library layout and book-to-slot assignment client-side.
+- **Three.js frontend** (TypeScript + Vite): render loop, scene graph, controls, raycasting, and the EPUB reader UI.
+
+*Why a server at all (vs the earlier static-only plan)?* The catalog is a SQLite file and EPUBs need hosting with correct content types; a small Axum server is the simplest Rust-native answer and gives one origin for everything. *Why not query SQLite in the browser (sql.js / sql.js-httpvfs over static hosting)?* Adds a second sqlite-wasm payload (~1 MB+), read-only hacks over HTTP range requests, and no clean home for locally hosted EPUBs — a server is simpler and was already the designated fallback. *Why not a pure-Rust engine (Bevy 0.19 wasm)?* Web target still second-class: 10–30 MB binaries, no GLTFLoader/meshopt/KTX2-class asset ecosystem, slow iteration vs Vite HMR. rend3 unmaintained.
+
+### D2 — Data flow: catalog → layout → instances
+On load: frontend fetches `/api/books` (stable id order) → passes ids + hints and a seed to the wasm generator → generator returns gallery graph, per-gallery instance buffers (flat `Float32Array` transforms + colors), collision AABBs, and an instance-index→book-id map → frontend builds `InstancedMesh`es per gallery. Raycast hit → instance index → book id → metadata already in memory; EPUB fetched only when the book is opened.
+
+Interop rule: the JS↔wasm call itself is ~ns-cheap but data copies run ~1–2 GB/s, so the API is coarse ("give me gallery N's buffers"), nothing crosses the boundary per frame, and buffers are copied out at load time — `Float32Array` views over wasm memory are invalidated when wasm memory grows, so no long-lived views.
+
+The layout is deterministic per (seed, ordered catalog): same catalog and seed ⇒ every visitor sees each book in the same place. Catalog for a v1 is expected in the hundreds-to-thousands of books; the generator sizes the gallery count to fit.
+
+### D3 — Rendering: WebGLRenderer + InstancedMesh, few real-time lights
+- `WebGLRenderer` (not `WebGPURenderer`) — lowest risk, fully sufficient indoors; WebGPU is a later swap.
+- Books: a handful of book geometry archetypes × `InstancedMesh` with per-instance transform + color (spec target: <100 draw calls with 2,000+ books in view). `BatchedMesh` avoided in v1 — known CPU-side sharp edges (three.js #28776).
+- Shelves/walls: repeated GLTF shelf-bay + architecture modules, also instanced.
+- Book spines show color + dimensions only in v1; legible spine-title textures (canvas-generated, one texture atlas per shelf) are a stretch goal — titles are always available via the crosshair HUD.
+- Lighting: warm ambient + a few point lights per gallery, `ACESFilmicToneMapping`; baked lightmaps deferred.
+- Culling: only the current gallery + adjacent neighbors live in the scene graph; rooms swap on doorway-crossing (satisfies the seamless-transition spec).
+- Pin `three` and `@types/three` to the same r-version (monthly minors move addons with core).
+
+### D4 — EPUB reader: epub.js overlay
+`epubjs` (the de-facto browser EPUB renderer) in a DOM overlay above the canvas: paginated flow, TOC from the EPUB spine, arrow-key + button paging. Loading state while fetching; error state (book title + close) on failure so a bad EPUB never kills the 3D session. Pointer lock is released on open and re-requested on close, restoring the exact player pose. External EPUB URLs load directly (subject to the remote host's CORS); locally hosted ones come from our server, same origin.
+
+### D5 — Collision & movement: capsule-vs-AABB, no physics engine
+The wasm generator emits static collision AABBs (walls, shelves, tables) per gallery; the TypeScript controller integrates WASD velocity (delta-time based, eye height 1.7 m, ~3 m/s) and resolves capsule-vs-AABB with slide response. *Why not Rapier?* ~1–2 MB extra wasm for axis-aligned box sliding. If interactions grow, adopt prebuilt `@dimforge/rapier3d-compat` (SIMD builds, three.js sync helpers) rather than compiling the `rapier3d` crate into our module. Collision *solving* stays in TypeScript (trivial math, zero per-frame boundary traffic); Rust supplies the data.
+
+### D6 — Toolchain & repo layout
+```
+babelLibrary/
+├── crates/babel-gen/        # Rust: layout generation (wasm-bindgen)
+├── server/                  # Rust: Axum catalog/API/static server
+├── web/                     # Vite + TypeScript + three + epubjs
+│   ├── src/                 # scene/, controls/, interact/, reader/, wasm/, api/
+│   └── public/assets/       # .glb models
+├── data/                    # books.sqlite (seeded), epubs/
+├── scripts/                 # seed + build orchestration
+└── openspec/
+```
+- Cargo workspace over `crates/babel-gen` + `server`; shared types (book presentation hints) in a small common crate if needed.
+- `wasm-pack build --target web` → consumed by Vite via `vite-plugin-wasm` (+ `build.target: 'esnext'`, so no top-level-await plugin). Escape hatch if wasm-pack misbehaves (yearly release cadence; pin 0.15.0): `cargo build --target wasm32-unknown-unknown` + `wasm-bindgen-cli`. Trunk not used (it targets all-Rust frontends).
+- Dev: `cargo run -p server` (API + epubs) + `npm run dev` (Vite, proxying `/api` and `/epubs`); `npm run wasm` rebuilds the generator. Build: one script → wasm, `vite build`, `cargo build --release -p server`.
+- Determinism unit tests run natively via `cargo test` (generation logic target-independent; the wasm-bindgen layer is a thin shim). Server gets endpoint tests against a fixture database.
+
+### D7 — Catalog schema and seeding
+SQLite table `books(id INTEGER PRIMARY KEY, title TEXT NOT NULL, author TEXT NOT NULL, synopsis TEXT, epub_url TEXT NOT NULL, spine_color TEXT NULL, page_count INTEGER NULL, created_at TEXT)` — schema created by an idempotent migration on server start. Seed script loads a sample set of public-domain EPUBs (Project Gutenberg) into `data/` so a fresh checkout runs end-to-end. DB opened read-only by the server in v1; catalog edits happen with any SQLite tool.
+
+### D8 — Assets: CC0 GLB + gltf-transform/meshopt pipeline
+Poly Haven / Kenney / Quaternius (CC0) for shelf bay, table, lamp, and ~5 book archetypes; keep the modeled set tiny — variety comes from instancing. Pipeline: `gltf-transform optimize --compress meshopt` (meshopt ≈ Draco after brotli, far faster decode, tiny decoder). KTX2 textures deferred. Record source + license per asset in `web/public/assets/CREDITS.md`.
+
+### D9 — Deployment: single container
+Multi-stage Dockerfile: (1) Rust stage builds wasm + server, (2) Node stage builds the frontend, (3) minimal runtime (distroless/debian-slim) with the server binary, `dist/`, and `data/` mount points. Configurable via env/flags: port, DB path, EPUB dir. Runs on any container host (Fly.io, a VPS, etc.). Single-threaded wasm keeps us free of COOP/COEP headers.
+
+### D10 — Methodology: TDD everywhere
+All implementation is test-first (red → green → refactor), per the `development-workflow` spec. Practical shape per layer: generator logic is target-independent Rust precisely so its tests run natively before any wasm/browser plumbing exists; server endpoints are written against `oneshot` integration tests on fixture DBs; frontend logic that can be pure (collision, dwell, parsing) is kept pure so vitest covers it without a browser; user-visible flows get Playwright tests derived from the spec scenarios. Where a test genuinely can't lead (exploratory shader/lighting tweaks, asset sourcing), the acceptance test is written immediately after the exploration settles and before the task is checked off. Test types, tooling, and the spec-scenario → test mapping: [doc/09-testing.md](../../../doc/09-testing.md).
+
+## Risks / Trade-offs
+
+- [Chatty interop creeps in as features grow] → rule: no wasm calls inside the render loop; bulk data only as typed arrays, copied out at load; wasm façade confined to `web/src/wasm/`.
+- [Frame-rate collapse with thousands of books] → instancing from day one; gallery-level scene swapping; profile with 2k+ books before feature work (spec: <100 draw calls, ≥30 FPS).
+- [Custom collision feels janky (snags on doorways)] → slide response + capsule margin; spec covers 0.9 m doorways; fallback is Rapier's kinematic character controller via `@dimforge/rapier3d-compat`.
+- [External EPUB URLs blocked by CORS] → epub.js fetches with XHR; remote hosts must send CORS headers. Mitigation: prefer locally hosted EPUBs; document the constraint; optional server-side proxy endpoint as a follow-up.
+- [Huge catalogs (10k+ books) blow up layout size or load time] → v1 targets ≤ a few thousand; guard with a server-side cap and log; per-gallery lazy generation is the follow-up if needed.
+- [Toolchain skew (three monthly minors, wasm-pack yearly releases)] → pin exact versions of `three`/`@types/three` and wasm tooling; document in README.
+- [Asset licensing] → CC0-only model sources; public-domain EPUBs for seed data; CREDITS.md per asset.
+
+## Migration Plan
+
+Greenfield — no migration. Order: local dev → seeded sample catalog → production Docker image verified locally → deploy to container host. Rollback = redeploy previous image; the SQLite file is external state and versioned/backed up separately.
+
+## Resolved Questions
+
+Decided during detailed planning (see `doc/`):
+
+- **Seed exposure**: canonical default `0xBABE1` with `?seed=<u64>` URL override (doc 01/04; now a spec requirement in `procedural-generation`).
+- **Shelf organization**: frontend pre-sorts the catalog by (author, title, id); the generator fills slots in a fixed traversal order, so shelves read alphabetically by author (doc 04; spec scenario added).
+- **Spine-title textures**: HUD-first in v1; canvas texture atlases are deferred polish (doc 05, doc 10 deferred list).
+
+## Plan documents
+
+The detailed implementation plan lives in [doc/](../../../doc/README.md). Mapping from decisions to docs:
+
+| Decision | Detailed in |
+|---|---|
+| D1 architecture, interop rules | [doc/02-architecture.md](../../../doc/02-architecture.md) |
+| D2 data flow | [doc/02-architecture.md](../../../doc/02-architecture.md) + [doc/04-wasm-generator.md](../../../doc/04-wasm-generator.md) (world model, buffer layouts) |
+| D3 rendering | [doc/05-rendering.md](../../../doc/05-rendering.md) |
+| D4 EPUB reader | [doc/07-interaction-reader.md](../../../doc/07-interaction-reader.md) |
+| D5 collision/movement | [doc/06-navigation-collision.md](../../../doc/06-navigation-collision.md) |
+| D6 toolchain/layout | [doc/02-architecture.md](../../../doc/02-architecture.md) + [doc/08-build-deployment.md](../../../doc/08-build-deployment.md) |
+| D7 catalog schema/API | [doc/03-data-and-api.md](../../../doc/03-data-and-api.md) (canonical contracts) |
+| D8 assets | [doc/05-rendering.md](../../../doc/05-rendering.md) |
+| D9 deployment | [doc/08-build-deployment.md](../../../doc/08-build-deployment.md) |
+| Testing strategy | [doc/09-testing.md](../../../doc/09-testing.md) (spec scenario → test mapping) |
+| D10 TDD methodology | [doc/09-testing.md](../../../doc/09-testing.md) §0 (red→green→refactor workflow, rules of engagement) |
+| Milestones/sequencing | [doc/10-roadmap.md](../../../doc/10-roadmap.md) |
+
+Shared constants (eye height, speeds, ranges, budgets, seed) are canonical in [doc/01-overview.md](../../../doc/01-overview.md); API/JSON shapes in doc 03; wasm buffer layouts in doc 04. If a contract changes, update those docs first, then dependent code.

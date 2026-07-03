@@ -1,0 +1,32 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# Node / frontend
+node_modules/
+web/dist/
+web/.vite/
+
+# Generated wasm package (built by `npm run wasm`)
+web/src/wasm/pkg/
+
+# Runtime data: catalog + EPUBs are seeded, not versioned
+/data/*
+!/data/.gitkeep
+
+# Test artifacts
+test-results/
+playwright-report/
+coverage/
+
+# Local tooling state
+.codegraph/
+.claude/settings.local.json
+
+# OS / editor noise
+.DS_Store
+*.log
+.env
+.idea/
+.vscode/*
+!.vscode/extensions.json
