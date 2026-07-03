@@ -1,3 +1,8 @@
+// @vitest-environment node
+//
+// Uses node:fs/promises and node:path directly to load the wasm bytes.
+// See tests/seed.test.ts for why Node built-ins need the plain Node
+// environment rather than the project-wide jsdom one.
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';

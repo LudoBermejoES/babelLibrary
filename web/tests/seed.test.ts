@@ -1,3 +1,13 @@
+// @vitest-environment node
+//
+// This suite (and the scripts/seed.ts module it exercises) uses Node
+// built-ins (node:sqlite, node:fs) directly. Under the project-wide jsdom
+// environment, Vite's client-bundling pipeline can — depending on exact
+// Vite/vitest dependency resolution — refuse to externalize node: imports
+// ("Cannot bundle Node.js built-in ... Consider disabling
+// environments.client.noExternal"), which is what broke CI once even
+// though it passed locally on a clean install. Forcing the plain Node
+// environment for this file sidesteps client bundling entirely.
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import { buildCatalog, migrate, BROKEN_ROW, type SeedBook } from '../../scripts/seed';
