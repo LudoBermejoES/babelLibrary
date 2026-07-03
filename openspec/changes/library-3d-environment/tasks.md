@@ -6,12 +6,12 @@
 
 ## 1. Project scaffolding & toolchain + CI (M0 — doc [02](../../../doc/02-architecture.md), [08](../../../doc/08-build-deployment.md))
 
-- [ ] 1.1 Verify/install toolchain: Rust stable + `wasm32-unknown-unknown` target, `wasm-pack` 0.15.x, Node LTS; record exact versions for the README
-- [ ] 1.2 Create Cargo workspace (`crates/babel-gen` lib + `server` bin) with one placeholder failing→passing `cargo test` per crate, proving the test harness runs
-- [ ] 1.3 Scaffold `web/` (Vite 8 + TS strict + `three@0.185.x` + `@types/three` + `epubjs` + `vite-plugin-wasm`, `build.target: 'esnext'`) with vitest wired and one placeholder test green
-- [ ] 1.4 Wire `npm run wasm`, `npm run dev` (proxy `/api` + `/epubs`), root build script (wasm + `dist/` + release server); Playwright installed with a first smoke test asserting the dev page serves
-- [ ] 1.5 **CI pipeline up front** (GitHub Actions, doc 09 §CI): fmt + clippy `-D warnings` + `cargo test` + `tsc --noEmit` + vitest + build + Playwright, red blocks merge — running against the placeholder tests from day one
-- [ ] 1.6 Smoke test (automated): blank Three.js scene renders (Playwright: canvas present, zero console errors) and a trivial typed wasm export is asserted from a vitest test
+- [x] 1.1 Verify/install toolchain: Rust stable + `wasm32-unknown-unknown` target, `wasm-pack` 0.15.x, Node LTS; record exact versions for the README
+- [x] 1.2 Create Cargo workspace (`crates/babel-gen` lib + `server` bin) with one placeholder failing→passing `cargo test` per crate, proving the test harness runs
+- [x] 1.3 Scaffold `web/` (Vite 8 + TS strict + `three@0.185.x` + `@types/three` + EPUB reader + `vite-plugin-wasm`, `build.target: 'esnext'`) with vitest wired and one placeholder test green
+- [x] 1.4 Wire `npm run wasm`, `npm run dev` (proxy `/api` + `/epubs`), root build script (wasm + `dist/` + release server); Playwright installed with a first smoke test asserting the dev page serves
+- [x] 1.5 **CI pipeline up front** (GitHub Actions, doc 09 §CI): fmt + clippy `-D warnings` + `cargo test` + `tsc --noEmit` + vitest + build + Playwright, red blocks merge — running against the placeholder tests from day one. Docker build lives in a separate release-only workflow (published release or `v*.*.*` tag), not on every PR/push.
+- [x] 1.6 Smoke test (automated): blank Three.js scene renders (Playwright: canvas present, zero console errors) and a trivial typed wasm export is asserted from a vitest test
 
 ## 2. Book catalog (M1 — doc [03](../../../doc/03-data-and-api.md))
 
@@ -52,7 +52,7 @@
 - [ ] 6.1 RED: vitest for dwell timer (book-id keyed, instance flicker ignored) and raycast→id resolution (mock hit → catalog metadata); Playwright specs for HUD (title/author in range, synopsis at 0.5 s, nothing beyond 2.5 m)
 - [ ] 6.2 GREEN: center-screen raycast (far 2.5 m, current gallery, alternate frames), instanceColor highlight, HUD — until 6.1 passes
 - [ ] 6.3 RED: Playwright reader specs — open shows loading then pages; arrows + buttons page and stop at ends; TOC jumps; `correct_book` (targeted id == reader title); close restores exact pose; `lazy_epubs` (zero `/epubs/`/external requests during a 20 s no-click walk)
-- [ ] 6.4 GREEN: epub.js overlay (loading state, pagination, TOC, `destroy()` cleanup) + open/close lifecycle (pose store, pointer-lock release, click-to-relock catcher) — until 6.3 passes
+- [ ] 6.4 GREEN: foliate-js overlay (loading state, pagination, TOC, `view.close()` cleanup) + open/close lifecycle (pose store, pointer-lock release, click-to-relock catcher) — until 6.3 passes
 - [ ] 6.5 RED→GREEN: failure-path tests using the `--with-broken` seed row + a CORS-blocked mock + a 20 s-timeout mock → error card (named book, close returns to walkable scene)
 - [ ] 6.6 REFACTOR: interaction/reader module boundaries; all suites green; no wasm/network calls in the render loop verified by the facade lint rule
 

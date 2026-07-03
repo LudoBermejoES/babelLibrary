@@ -46,8 +46,12 @@ The layout is deterministic per (seed, ordered catalog): same catalog and seed �
 - Culling: only the current gallery + adjacent neighbors live in the scene graph; rooms swap on doorway-crossing (satisfies the seamless-transition spec).
 - Pin `three` and `@types/three` to the same r-version (monthly minors move addons with core).
 
-### D4 — EPUB reader: epub.js overlay
-`epubjs` (the de-facto browser EPUB renderer) in a DOM overlay above the canvas: paginated flow, TOC from the EPUB spine, arrow-key + button paging. Loading state while fetching; error state (book title + close) on failure so a bad EPUB never kills the 3D session. Pointer lock is released on open and re-requested on close, restoring the exact player pose. External EPUB URLs load directly (subject to the remote host's CORS); locally hosted ones come from our server, same origin.
+### D4 — EPUB reader: foliate-js overlay (revised during implementation)
+`epubjs` (npm `epubjs@0.3.93`) was the original plan but was rejected during M0 scaffolding: it's unmaintained and pulls a vulnerable, unmaintained `@xmldom/xmldom@0.7.13` (multiple open high-severity CVEs, no fix in that branch). The npm "upgrade" path (`0.4.2`) is actually an older 2018 release with worse dependencies; the maintained rewrite (`0.5.0-alpha.3`) has been stalled since 2023.
+
+Instead: **foliate-js** (github.com/johnfactotum/foliate-js, MIT), vendored as source into `web/src/reader/vendor/` at a pinned commit. It has zero runtime npm dependencies (it vendors its own zip/inflate handling), is actively maintained, and is purpose-built for paginated EPUB rendering with TOC/CFI/search support — the `<foliate-view>` custom element replaces the `epubjs` `Rendition` API. `npm audit` is clean (0 vulnerabilities) with this substitution. Trade-off accepted: not an npm package, so upgrades mean re-vendoring and diffing against upstream (documented in `web/src/reader/vendor/VENDORED.md`); the upstream API has no stability guarantee, which is fine for a single pinned-commit integration.
+
+DOM overlay above the canvas: paginated flow, TOC from the EPUB spine, arrow-key + button paging. Loading state while fetching; error state (book title + close) on failure so a bad EPUB never kills the 3D session. Pointer lock is released on open and re-requested on close, restoring the exact player pose. External EPUB URLs load directly (subject to the remote host's CORS); locally hosted ones come from our server, same origin.
 
 ### D5 — Collision & movement: capsule-vs-AABB, no physics engine
 The wasm generator emits static collision AABBs (walls, shelves, tables) per gallery; the TypeScript controller integrates WASD velocity (delta-time based, eye height 1.7 m, ~3 m/s) and resolves capsule-vs-AABB with slide response. *Why not Rapier?* ~1–2 MB extra wasm for axis-aligned box sliding. If interactions grow, adopt prebuilt `@dimforge/rapier3d-compat` (SIMD builds, three.js sync helpers) rather than compiling the `rapier3d` crate into our module. Collision *solving* stays in TypeScript (trivial math, zero per-frame boundary traffic); Rust supplies the data.
@@ -57,7 +61,7 @@ The wasm generator emits static collision AABBs (walls, shelves, tables) per gal
 babelLibrary/
 ├── crates/babel-gen/        # Rust: layout generation (wasm-bindgen)
 ├── server/                  # Rust: Axum catalog/API/static server
-├── web/                     # Vite + TypeScript + three + epubjs
+├── web/                     # Vite + TypeScript + three + foliate-js (vendored)
 │   ├── src/                 # scene/, controls/, interact/, reader/, wasm/, api/
 │   └── public/assets/       # .glb models
 ├── data/                    # books.sqlite (seeded), epubs/
@@ -86,7 +90,7 @@ All implementation is test-first (red → green → refactor), per the `developm
 - [Chatty interop creeps in as features grow] → rule: no wasm calls inside the render loop; bulk data only as typed arrays, copied out at load; wasm façade confined to `web/src/wasm/`.
 - [Frame-rate collapse with thousands of books] → instancing from day one; gallery-level scene swapping; profile with 2k+ books before feature work (spec: <100 draw calls, ≥30 FPS).
 - [Custom collision feels janky (snags on doorways)] → slide response + capsule margin; spec covers 0.9 m doorways; fallback is Rapier's kinematic character controller via `@dimforge/rapier3d-compat`.
-- [External EPUB URLs blocked by CORS] → epub.js fetches with XHR; remote hosts must send CORS headers. Mitigation: prefer locally hosted EPUBs; document the constraint; optional server-side proxy endpoint as a follow-up.
+- [External EPUB URLs blocked by CORS] → the reader fetches the EPUB with `fetch`; remote hosts must send CORS headers. Mitigation: prefer locally hosted EPUBs; document the constraint; optional server-side proxy endpoint as a follow-up.
 - [Huge catalogs (10k+ books) blow up layout size or load time] → v1 targets ≤ a few thousand; guard with a server-side cap and log; per-gallery lazy generation is the follow-up if needed.
 - [Toolchain skew (three monthly minors, wasm-pack yearly releases)] → pin exact versions of `three`/`@types/three` and wasm tooling; document in README.
 - [Asset licensing] → CC0-only model sources; public-domain EPUBs for seed data; CREDITS.md per asset.

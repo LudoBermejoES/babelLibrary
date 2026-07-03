@@ -1,0 +1,14 @@
+{
+  "name": "babel-library",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "wasm": "scripts/wasm-build.sh",
+    "wasm:release": "scripts/wasm-build.sh --release",
+    "dev": "npm run wasm && npm --prefix web run dev",
+    "build": "scripts/build.sh",
+    "test": "npm --prefix web test",
+    "e2e": "npm --prefix web run e2e"
+  }
+}

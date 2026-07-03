@@ -8,7 +8,7 @@ Every task in `tasks.md` follows red → green → refactor:
 
 1. **Red** — write the test(s) expressing the task's acceptance criteria first, run them, watch them fail. The failing run proves the test can fail (a test that passes before the code exists tests nothing).
 2. **Green** — write the minimal implementation to pass. Resist implementing ahead of the tests.
-3. **Refactor** — clean up with the suite green; static checks (`clippy -D warnings`, `tsc --noEmit`) count as part of green.
+3. **Refactor** — clean up with the suite green; static checks (`cargo clippy --workspace --all-targets -- -D warnings`, `tsc --noEmit`) count as part of green.
 
 Rules of engagement:
 
@@ -86,11 +86,19 @@ Playwright `perf_walk` (tagged `@perf`, run on demand, not per-commit): 3,000-bo
 - External EPUB row on the deployed site (CORS reality check).
 - Fresh-machine README run-through (spec: New machine onboarding) — performed once per release by following README.md literally in a clean container/VM.
 
-## CI pipeline (GitHub Actions, per PR)
+## CI pipeline (GitHub Actions)
 
-1. `cargo fmt --check` + `cargo clippy -D warnings` (workspace)
-2. `cargo test` (babel-gen + server)
-3. `npm run wasm` + `tsc --noEmit` + `vitest run`
-4. `npm run build` (production build must succeed)
-5. Playwright suite (chromium headless) against the built artifacts
-6. `docker build .` on main merges
+Two workflows, deliberately separate — `.github/workflows/ci.yml` runs on every PR and push to `main`; `.github/workflows/release.yml` runs **only on an explicit human action** (a manual `workflow_dispatch` run, or publishing a GitHub Release), never automatically from a commit, push, or tag. This is a deliberate cost control: routine commits — including the version-bump-and-tag step described in `CLAUDE.md` — never trigger a Docker build or registry push on their own.
+
+**`ci.yml` (every PR / push to `main`):**
+
+1. `cargo fmt --all --check` + `cargo clippy --workspace --all-targets -- -D warnings`
+2. `cargo test --workspace` (babel-gen + server)
+3. wasm build (`scripts/wasm-build.sh --release`), uploaded as an artifact for the frontend/e2e jobs
+4. `tsc` + `vitest run` (`npm test` in `web/`)
+5. `npm run build` (production build must succeed)
+6. Playwright suite (chromium headless) against the dev server
+
+**`release.yml` (manual `workflow_dispatch`, or a published GitHub Release):**
+
+1. `docker build` (multi-stage, doc 08) and push to GHCR, tagged from the release version

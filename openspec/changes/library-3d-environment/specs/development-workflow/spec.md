@@ -27,7 +27,7 @@ The project SHALL maintain, from the first milestone onward, every applicable te
 - **Frontend unit tests** (vitest): collision math, frame-rate independence, dwell timer, API client parsing, wasm facade buffer shapes.
 - **End-to-end tests** (Playwright, real server + real wasm + seeded fixture catalog): user-facing spec scenarios, console-error-free boot, lazy-loading guarantees, failure paths.
 - **Performance tests** (scripted walk gate): FPS floor and draw-call budget assertions.
-- **Static checks**: `cargo fmt --check`, `cargo clippy -D warnings`, `tsc --noEmit`.
+- **Static checks**: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `tsc --noEmit`.
 
 #### Scenario: Each layer has its suite from the start
 - **WHEN** a milestone introduces a new layer (server, generator, frontend logic, UI flows)

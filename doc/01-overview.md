@@ -43,7 +43,7 @@ The name honors Borges' *Library of Babel*: hexagonal galleries, endless shelves
 | **Generator** | The `babel-gen` Rust crate compiled to wasm that produces the layout. |
 | **Instance buffers** | Flat typed arrays (transforms, colors, book ids) the generator emits per gallery for `InstancedMesh`. |
 | **HUD** | The 2D DOM overlay: crosshair, book metadata line, hints. |
-| **Reader** | The epub.js overlay that displays an opened book. |
+| **Reader** | The foliate-js (`<foliate-view>`, vendored) overlay that displays an opened book. |
 
 ## Key constants (canonical values, referenced across docs)
 

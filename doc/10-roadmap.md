@@ -37,7 +37,7 @@ Pointer lock, movement, collision, gallery tracking + hysteresis, pause overlay.
 
 ## M5 — Books open (tasks 6.1–6.6)
 
-Raycast targeting, highlight + HUD with dwell synopsis, epub.js reader (loading/TOC/paging/error card), mode state machine, lazy-load guarantee.
+Raycast targeting, highlight + HUD with dwell synopsis, foliate-js reader (loading/TOC/paging/error card), mode state machine, lazy-load guarantee.
 
 **Exit criteria**: full Playwright suite green including `correct_book`, `broken_epub`, `lazy_epubs`. This closes every user-facing spec.
 

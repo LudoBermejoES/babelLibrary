@@ -8,7 +8,7 @@ Three tiers, each in its natural language:
 ┌────────────────────────── Browser ──────────────────────────┐
 │  Three.js frontend (TypeScript, Vite)                       │
 │  render loop · scene graph · controls · raycast · HUD       │
-│  epub.js reader overlay                                     │
+│  foliate-js reader overlay (vendored)                       │
 │        │ coarse calls, flat typed arrays (no per-frame IO)  │
 │  babel-gen.wasm (Rust, wasm-bindgen)                        │
 │  layout generation · slot assignment · collision AABBs      │
@@ -37,7 +37,7 @@ Rationale (researched July 2026, see design.md in the OpenSpec change for altern
 | Frontend tooling | Vite + TypeScript strict | Vite 8.x, TS 5.x |
 | Wasm bridge | wasm-bindgen / wasm-pack | 0.2.126 / 0.15.x |
 | Vite wasm loading | `vite-plugin-wasm` + `build.target: 'esnext'` | 3.6.x |
-| EPUB rendering | `epubjs` | 0.3.x (latest) |
+| EPUB rendering | `foliate-js` (vendored source, not npm) | pinned commit, see `web/src/reader/vendor/VENDORED.md` |
 | Server | Axum + tokio + tower-http | Axum 0.8.x |
 | DB access | rusqlite (bundled SQLite) | 0.37.x |
 | Asset pipeline | @gltf-transform/cli (meshopt) | 4.4.x |
@@ -68,7 +68,7 @@ babelLibrary/
 │   │   ├── scene/             # renderer, galleries, instancing, lights (doc 05)
 │   │   ├── controls/          # pointer lock, movement, collision (doc 06)
 │   │   ├── interact/          # raycast, highlight, HUD (doc 07)
-│   │   ├── reader/            # epub.js overlay (doc 07)
+│   │   ├── reader/            # foliate-js overlay + vendor/ (doc 07)
 │   │   └── ui/                # overlays: enter, pause, error
 │   └── public/assets/         # .glb models + CREDITS.md
 ├── data/                      # books.sqlite, epubs/   (gitignored except sample)

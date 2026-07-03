@@ -14,7 +14,7 @@ These documents are the complete build plan. They complement the OpenSpec change
 | [04-wasm-generator.md](04-wasm-generator.md) | `babel-gen` crate: world model, generation algorithm, wasm API, buffer layouts, determinism |
 | [05-rendering.md](05-rendering.md) | Scene construction, assets, instancing, lighting, gallery streaming, performance budgets |
 | [06-navigation-collision.md](06-navigation-collision.md) | Pointer-lock controls, movement model, capsule-vs-AABB collision with slide |
-| [07-interaction-reader.md](07-interaction-reader.md) | Raycast targeting, HUD, epub.js reader, input-mode state machine, failure handling |
+| [07-interaction-reader.md](07-interaction-reader.md) | Raycast targeting, HUD, foliate-js reader (vendored), input-mode state machine, failure handling |
 | [08-build-deployment.md](08-build-deployment.md) | Toolchain, dev workflow, build scripts, Dockerfile, hosting, configuration |
 | [09-testing.md](09-testing.md) | Test strategy per layer, spec-scenario → test mapping, manual QA checklist |
 | [10-roadmap.md](10-roadmap.md) | Milestones M0–M6 mapped to `tasks.md`, exit criteria, risk gates |

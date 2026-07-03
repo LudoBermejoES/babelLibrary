@@ -1,6 +1,6 @@
 # book-interaction
 
-> Implementation details: [doc/07-interaction-reader.md](../../../../../doc/07-interaction-reader.md) (raycast targeting, highlight technique, epub.js integration, failure paths).
+> Implementation details: [doc/07-interaction-reader.md](../../../../../doc/07-interaction-reader.md) (raycast targeting, highlight technique, foliate-js integration, failure paths).
 
 ## ADDED Requirements
 

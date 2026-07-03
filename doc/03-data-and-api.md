@@ -78,7 +78,7 @@ Returns every book, **ordered by `id` ascending** (stable order is part of the c
 Static file serving from `BABEL_EPUB_DIR` via `tower-http::ServeDir`:
 
 - `Content-Type: application/epub+zip` (explicit mapping for `.epub`).
-- `Accept-Ranges: bytes` (ServeDir provides range support; epub.js benefits on large files).
+- `Accept-Ranges: bytes` (ServeDir provides range support; beneficial for large EPUB files).
 - No directory traversal (ServeDir normalizes), no listing.
 
 ### `GET /healthz`
