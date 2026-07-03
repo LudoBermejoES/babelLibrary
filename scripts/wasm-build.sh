@@ -15,6 +15,9 @@ fi
 
 export PATH="$HOME/.cargo/bin:/opt/homebrew/opt/rustup/bin:$PATH"
 
+# The getrandom_backend cfg flag required for wasm32-unknown-unknown lives
+# in .cargo/config.toml (applies to every build path, not just this script).
+
 wasm-pack build "$REPO_ROOT/crates/babel-gen" \
   --target web \
   $PROFILE_FLAG \

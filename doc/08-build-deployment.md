@@ -25,7 +25,7 @@ npm run dev                     # vite; proxies /api and /epubs → :8080
 ```
 
 - `vite.config.ts`: `server.proxy = { '/api': 'http://localhost:8080', '/epubs': 'http://localhost:8080' }`; plugins `[wasm()]`; `build.target: 'esnext'` (avoids the top-level-await plugin).
-- **Rust wasm iteration**: `npm run wasm` → `wasm-pack build crates/babel-gen --target web --out-dir ../../web/src/wasm/pkg` (dev profile: `--dev` for fast builds). Vite picks the new pkg up on reload. Optional nicety later: `cargo watch -s 'npm run wasm'`.
+- **Rust wasm iteration**: `npm run wasm` → `scripts/wasm-build.sh`, which runs `wasm-pack build crates/babel-gen --target web --out-dir web/src/wasm/pkg` (dev profile; `--release` for `wasm:release`). The `wasm32-unknown-unknown` target needs `--cfg getrandom_backend="wasm_js"` at compile time, set via the workspace-root `.cargo/config.toml`'s `[target.wasm32-unknown-unknown]` `rustflags` (not the script itself, so it also applies to direct `cargo build --target wasm32-unknown-unknown` and IDE/rust-analyzer builds). That flag is required because `rand`'s transitive `getrandom` dependency refuses to build for `wasm32-unknown-unknown` without an explicit entropy backend, even though this crate never uses OS randomness (every RNG stream is explicitly seeded — see `crates/babel-gen/src/rng.rs`); `getrandom`'s own `wasm_js` Cargo feature alone isn't sufficient. Vite picks the new pkg up on reload. Optional nicety later: `cargo watch -s 'npm run wasm'`.
 - **Server iteration**: plain `cargo run`; `cargo watch -x 'run -p server'` optional.
 - TypeScript checking is part of `npm run build` (`tsc --noEmit && vite build`) and the pre-commit expectation.
 
@@ -63,6 +63,7 @@ FROM rust:1-slim AS rust-build
 RUN cargo install wasm-pack --locked
 WORKDIR /app
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+COPY .cargo ./.cargo
 COPY crates ./crates
 COPY server ./server
 RUN wasm-pack build crates/babel-gen --target web --release --out-dir /app/wasm-pkg

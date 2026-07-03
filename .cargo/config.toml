@@ -1,0 +1,14 @@
+# rand's transitive getrandom dependency refuses to build for
+# wasm32-unknown-unknown without an explicit backend choice, even though
+# babel-gen never actually calls into OS entropy (every RNG stream in this
+# crate is explicitly seeded — see crates/babel-gen/src/rng.rs). getrandom's
+# own `wasm_js` Cargo feature (enabled in crates/babel-gen/Cargo.toml) is not
+# sufficient by itself; it also requires this --cfg flag at compile time.
+# See https://docs.rs/getrandom/latest/getrandom/#webassembly-support
+#
+# Living here (rather than only in scripts/wasm-build.sh) means it applies
+# to every wasm32-unknown-unknown build path: the script, direct `cargo
+# build --target wasm32-unknown-unknown` invocations, and IDE/rust-analyzer
+# cargo integration.
+[target.wasm32-unknown-unknown]
+rustflags = ['--cfg', 'getrandom_backend="wasm_js"']

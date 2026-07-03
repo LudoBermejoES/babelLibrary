@@ -1,6 +1,0 @@
-use babel_gen::placeholder_ready;
-
-#[test]
-fn test_harness_runs() {
-    assert!(placeholder_ready());
-}
