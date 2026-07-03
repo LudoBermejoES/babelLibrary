@@ -1,7 +1,15 @@
 import type * as THREE from 'three';
 import type { LibraryGraph } from './wasm';
+import type { FpsTracker } from './scene/perf-stats';
 import type { GalleryStreamer, StreamedGalleryCounts } from './scene/streaming';
 import type { VestibuleCounts } from './scene/vestibule';
+
+export interface PerfStats {
+  /** Minimum instantaneous FPS since the tracker was last reset, or `null` if fewer than 2 frames have rendered. */
+  fps30sMin: number | null;
+  /** `renderer.info.render.calls` at the moment of the read (doc 09 §5 draw-call budget). */
+  drawCalls: number;
+}
 
 export interface BabelDebugHook {
   galleryCount: number;
@@ -15,6 +23,9 @@ export interface BabelDebugHook {
   staircaseMatchesFlags(index: number): boolean;
   floorNeighborOf(index: number, direction: 'above' | 'below'): number | null;
   shaftGlimpseExists(galleryIndex: number): boolean;
+  /** Doc 09 §5 perf gate: resets the rolling FPS-minimum window. Call before starting a scripted walk. */
+  resetStats(): void;
+  stats: PerfStats;
 }
 
 declare global {
@@ -32,11 +43,22 @@ export function installDebugHook(
   graph: LibraryGraph,
   scene: THREE.Scene,
   streamer: GalleryStreamer,
+  renderer: THREE.WebGLRenderer,
+  fpsTracker: FpsTracker,
 ): void {
   if (!isE2eMode()) return;
   window.__babel = {
     galleryCount: graph.galleries.length,
     seed: seed.toString(),
+    resetStats(): void {
+      fpsTracker.reset();
+    },
+    get stats(): PerfStats {
+      return {
+        fps30sMin: fpsTracker.min(),
+        drawCalls: renderer.info.render.calls,
+      };
+    },
     liveGalleryIndices(): number[] {
       return [...streamer.liveGalleryIndices].sort((a, b) => a - b);
     },

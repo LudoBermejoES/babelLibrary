@@ -1,6 +1,7 @@
 import './style.css';
 import { createRenderer, isWebGL2Available } from './scene/renderer';
 import { createAmbientLight, createFog } from './scene/lighting';
+import { FpsTracker } from './scene/perf-stats';
 import { GalleryStreamer } from './scene/streaming';
 import { fetchBooks } from './api/books';
 import type { BookMeta } from './api/types';
@@ -87,9 +88,11 @@ export async function boot(): Promise<void> {
 
   camera.position.set(graph.spawn.position[0], graph.spawn.position[1], graph.spawn.position[2]);
 
-  installDebugHook(seed, graph, scene, streamer);
+  const fpsTracker = new FpsTracker();
+  installDebugHook(seed, graph, scene, streamer, renderer, fpsTracker);
 
-  renderer.setAnimationLoop(() => {
+  renderer.setAnimationLoop((now) => {
+    fpsTracker.recordFrame(now);
     renderer.render(scene, camera);
   });
 }
