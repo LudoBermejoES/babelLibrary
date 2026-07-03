@@ -1,14 +1,5 @@
 import { expect, test } from '@playwright/test';
-
-declare global {
-  interface Window {
-    __babel?: {
-      galleryCount: number;
-      seed: string;
-      wallMeshCountForGallery(index: number): number;
-    };
-  }
-}
+import type {} from '../src/debug';
 
 test('seeded fixture catalog renders galleries reachable via the debug hook', async ({ page }) => {
   await page.goto('/?e2e');

@@ -1,6 +1,7 @@
 import './style.css';
 import { createRenderer, isWebGL2Available } from './scene/renderer';
 import { buildGalleryArchitecture } from './scene/gallery';
+import { buildGalleryInstances } from './scene/instancing';
 import { fetchBooks } from './api/books';
 import { createLibrary } from './wasm';
 import { installDebugHook } from './debug';
@@ -47,12 +48,18 @@ export async function boot(): Promise<void> {
   const books = await fetchBooks();
   const { graph, getGallery } = await createLibrary(seed, books);
 
+  const instanceCounts = new Map<number, { books: number; shelves: number; lamps: number }>();
   for (const gallery of graph.galleries) {
-    scene.add(buildGalleryArchitecture(gallery, getGallery(gallery.index), graph.config));
+    const buffers = getGallery(gallery.index);
+    const architecture = buildGalleryArchitecture(gallery, buffers, graph.config);
+    const { group: instances, bookCount, shelfCount, lampCount } = buildGalleryInstances(buffers);
+    architecture.add(instances);
+    scene.add(architecture);
+    instanceCounts.set(gallery.index, { books: bookCount, shelves: shelfCount, lamps: lampCount });
   }
   camera.position.set(graph.spawn.position[0], graph.spawn.position[1], graph.spawn.position[2]);
 
-  installDebugHook(seed, graph, scene);
+  installDebugHook(seed, graph, scene, instanceCounts);
 
   renderer.setAnimationLoop(() => {
     renderer.render(scene, camera);
