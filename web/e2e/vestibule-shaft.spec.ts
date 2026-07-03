@@ -10,24 +10,27 @@ test('every gallery renders a vestibule room with mirror and 2 closets', async (
   expect(counts.closets).toBe(2);
 });
 
-test('shaft railing renders for every gallery', async ({ page }) => {
+test('shaft railing renders for every currently-live gallery', async ({ page }) => {
   await page.goto('/?e2e');
   await page.waitForFunction(() => window.__babel !== undefined);
 
-  const galleryCount = await page.evaluate(() => window.__babel!.galleryCount);
-  for (let i = 0; i < galleryCount; i++) {
-    const railingCount = await page.evaluate((index) => window.__babel!.shaftRailingMeshCount(index), i);
+  const liveIndices = await page.evaluate(() => window.__babel!.liveGalleryIndices());
+  expect(liveIndices.length).toBeGreaterThan(0);
+  for (const index of liveIndices) {
+    const railingCount = await page.evaluate((i) => window.__babel!.shaftRailingMeshCount(i), index);
     expect(railingCount).toBeGreaterThan(0);
   }
 });
 
-test('staircase mesh presence matches the vestibule buffer flags', async ({ page }) => {
+test('staircase mesh presence matches the vestibule buffer flags, for every currently-live gallery', async ({
+  page,
+}) => {
   await page.goto('/?e2e');
   await page.waitForFunction(() => window.__babel !== undefined);
 
-  const galleryCount = await page.evaluate(() => window.__babel!.galleryCount);
-  for (let i = 0; i < galleryCount; i++) {
-    const result = await page.evaluate((index) => window.__babel!.staircaseMatchesFlags(index), i);
+  const liveIndices = await page.evaluate(() => window.__babel!.liveGalleryIndices());
+  for (const index of liveIndices) {
+    const result = await page.evaluate((i) => window.__babel!.staircaseMatchesFlags(i), index);
     expect(result).toBe(true);
   }
 });

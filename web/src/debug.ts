@@ -1,18 +1,15 @@
 import type * as THREE from 'three';
 import type { LibraryGraph } from './wasm';
+import type { GalleryStreamer, StreamedGalleryCounts } from './scene/streaming';
 import type { VestibuleCounts } from './scene/vestibule';
-
-export interface InstanceCounts {
-  books: number;
-  shelves: number;
-  lamps: number;
-}
 
 export interface BabelDebugHook {
   galleryCount: number;
   seed: string;
+  liveGalleryIndices(): number[];
+  setCurrentGallery(index: number): void;
   wallMeshCountForGallery(index: number): number;
-  instanceCountsForGallery(index: number): InstanceCounts;
+  instanceCountsForGallery(index: number): StreamedGalleryCounts;
   vestibuleMeshCountsForGallery(index: number): { mirrors: number; closets: number };
   shaftRailingMeshCount(index: number): number;
   staircaseMatchesFlags(index: number): boolean;
@@ -24,7 +21,7 @@ declare global {
   }
 }
 
-const ZERO_COUNTS: InstanceCounts = { books: 0, shelves: 0, lamps: 0 };
+const ZERO_COUNTS: StreamedGalleryCounts = { books: 0, shelves: 0, lamps: 0 };
 const ZERO_VESTIBULE: VestibuleCounts = { mirrors: 0, closets: 0, staircases: 0 };
 
 /** Exposes generator/scene state for Playwright (behind `?e2e`, doc 09 debug hooks). Never installed otherwise, so production builds carry no e2e surface. */
@@ -32,13 +29,18 @@ export function installDebugHook(
   seed: bigint,
   graph: LibraryGraph,
   scene: THREE.Scene,
-  instanceCounts: Map<number, InstanceCounts>,
-  vestibuleCounts: Map<number, VestibuleCounts>,
+  streamer: GalleryStreamer,
 ): void {
   if (!isE2eMode()) return;
   window.__babel = {
     galleryCount: graph.galleries.length,
     seed: seed.toString(),
+    liveGalleryIndices(): number[] {
+      return [...streamer.liveGalleryIndices].sort((a, b) => a - b);
+    },
+    setCurrentGallery(index: number): void {
+      streamer.update(index);
+    },
     wallMeshCountForGallery(index: number): number {
       const group = scene.getObjectByName(`gallery-${index}`);
       if (!group) return 0;
@@ -51,11 +53,11 @@ export function installDebugHook(
       }
       return count;
     },
-    instanceCountsForGallery(index: number): InstanceCounts {
-      return instanceCounts.get(index) ?? ZERO_COUNTS;
+    instanceCountsForGallery(index: number): StreamedGalleryCounts {
+      return streamer.instanceCountsFor(index) ?? ZERO_COUNTS;
     },
     vestibuleMeshCountsForGallery(index: number): { mirrors: number; closets: number } {
-      const { mirrors, closets } = vestibuleCounts.get(index) ?? ZERO_VESTIBULE;
+      const { mirrors, closets } = streamer.vestibuleCountsFor(index) ?? ZERO_VESTIBULE;
       return { mirrors, closets };
     },
     shaftRailingMeshCount(index: number): number {
@@ -64,7 +66,7 @@ export function installDebugHook(
       return railing?.children.length ?? 0;
     },
     staircaseMatchesFlags(index: number): boolean {
-      const expectsStaircase = (vestibuleCounts.get(index) ?? ZERO_VESTIBULE).staircases > 0;
+      const expectsStaircase = (streamer.vestibuleCountsFor(index) ?? ZERO_VESTIBULE).staircases > 0;
       const gallery = scene.getObjectByName(`gallery-${index}`);
       const vestibule = gallery?.getObjectByName('vestibule');
       const meshCount = vestibule?.children.length ?? 0;

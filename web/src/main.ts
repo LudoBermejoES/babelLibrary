@@ -1,8 +1,6 @@
 import './style.css';
 import { createRenderer, isWebGL2Available } from './scene/renderer';
-import { buildGalleryArchitecture } from './scene/gallery';
-import { buildGalleryInstances } from './scene/instancing';
-import { buildShaftRailing, buildVestibule, type VestibuleCounts } from './scene/vestibule';
+import { GalleryStreamer } from './scene/streaming';
 import { fetchBooks } from './api/books';
 import { createLibrary } from './wasm';
 import { installDebugHook } from './debug';
@@ -49,26 +47,12 @@ export async function boot(): Promise<void> {
   const books = await fetchBooks();
   const { graph, getGallery } = await createLibrary(seed, books);
 
-  const instanceCounts = new Map<number, { books: number; shelves: number; lamps: number }>();
-  const vestibuleCounts = new Map<number, VestibuleCounts>();
-  for (const gallery of graph.galleries) {
-    const buffers = getGallery(gallery.index);
-    const architecture = buildGalleryArchitecture(gallery, buffers, graph.config);
-    const { group: instances, bookCount, shelfCount, lampCount } = buildGalleryInstances(buffers);
-    architecture.add(instances);
+  const streamer = new GalleryStreamer(scene, graph, getGallery);
+  streamer.update(graph.spawn.gallery);
 
-    const { group: vestibule, counts } = buildVestibule(buffers);
-    architecture.add(vestibule);
-    vestibuleCounts.set(gallery.index, counts);
-
-    architecture.add(buildShaftRailing(buffers));
-
-    scene.add(architecture);
-    instanceCounts.set(gallery.index, { books: bookCount, shelves: shelfCount, lamps: lampCount });
-  }
   camera.position.set(graph.spawn.position[0], graph.spawn.position[1], graph.spawn.position[2]);
 
-  installDebugHook(seed, graph, scene, instanceCounts, vestibuleCounts);
+  installDebugHook(seed, graph, scene, streamer);
 
   renderer.setAnimationLoop(() => {
     renderer.render(scene, camera);

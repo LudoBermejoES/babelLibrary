@@ -10,15 +10,22 @@ test('gallery 0 renders exactly 4 shelf-bay instances and 2 lamp instances', asy
   expect(counts.lamps).toBe(2);
 });
 
-test('books rendered across all galleries match the fixture catalog size', async ({ page }) => {
+test('books rendered across all galleries (visited one at a time via streaming) match the fixture catalog size', async ({
+  page,
+}) => {
   await page.goto('/?e2e');
   await page.waitForFunction(() => window.__babel !== undefined);
 
+  // Only the current gallery + its neighbors are ever live at once (gallery
+  // streaming, task 4.8) — walk every gallery as "current" in turn so each
+  // one's books are counted exactly once, matching a full tour of the library.
   const { galleryCount, total } = await page.evaluate(() => {
-    const count = window.__babel!.galleryCount;
+    const babel = window.__babel!;
+    const count = babel.galleryCount;
     let books = 0;
     for (let i = 0; i < count; i++) {
-      books += window.__babel!.instanceCountsForGallery(i).books;
+      babel.setCurrentGallery(i);
+      books += babel.instanceCountsForGallery(i).books;
     }
     return { galleryCount: count, total: books };
   });
