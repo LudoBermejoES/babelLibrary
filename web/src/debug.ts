@@ -45,8 +45,20 @@ export function installDebugHook(
   streamer: GalleryStreamer,
   renderer: THREE.WebGLRenderer,
   fpsTracker: FpsTracker,
+  camera: THREE.PerspectiveCamera,
 ): void {
   if (!isE2eMode()) return;
+
+  // Every hexagon has the identical fixed shape/orientation, so gallery 0's
+  // spawn offset from its own center is the correct standing pose for any
+  // gallery — no generator constants duplicated here.
+  const spawnGalleryCenter = graph.galleries[graph.spawn.gallery]!.center;
+  const standOffset: [number, number, number] = [
+    graph.spawn.position[0] - spawnGalleryCenter[0],
+    graph.spawn.position[1] - spawnGalleryCenter[1],
+    graph.spawn.position[2] - spawnGalleryCenter[2],
+  ];
+
   window.__babel = {
     galleryCount: graph.galleries.length,
     seed: seed.toString(),
@@ -64,6 +76,19 @@ export function installDebugHook(
     },
     setCurrentGallery(index: number): void {
       streamer.update(index);
+      // Move the "player" too — a current gallery with the camera left
+      // behind in a disposed one renders nothing (drawCalls 0), which made
+      // both the perf gate and the visual demo meaningless. This is the
+      // teleport half of doc 09's eventual teleport(q,r,floor,...) hook.
+      const gallery = graph.galleries[index];
+      if (!gallery) return;
+      const [gx, gy, gz] = gallery.center;
+      camera.position.set(gx + standOffset[0], gy + standOffset[1], gz + standOffset[2]);
+      camera.lookAt(
+        camera.position.x + Math.cos(graph.spawn.yaw),
+        camera.position.y,
+        camera.position.z + Math.sin(graph.spawn.yaw),
+      );
     },
     wallMeshCountForGallery(index: number): number {
       const group = scene.getObjectByName(`gallery-${index}`);

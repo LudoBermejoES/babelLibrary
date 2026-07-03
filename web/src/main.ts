@@ -95,7 +95,7 @@ export async function boot(): Promise<void> {
   camera.lookAt(spawnX + Math.cos(graph.spawn.yaw), spawnY, spawnZ + Math.sin(graph.spawn.yaw));
 
   const fpsTracker = new FpsTracker();
-  installDebugHook(seed, graph, scene, streamer, renderer, fpsTracker);
+  installDebugHook(seed, graph, scene, streamer, renderer, fpsTracker, camera);
 
   renderer.setAnimationLoop((now) => {
     fpsTracker.recordFrame(now);
