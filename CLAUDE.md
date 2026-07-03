@@ -67,6 +67,22 @@ git push --follow-tags
 step (a plain `git push origin "v${VERSION}"` also works, but requires two
 separate pushes — one for commits, one for the tag).
 
+**Verify the tag actually landed.** `--follow-tags` has been observed to push
+the commit but silently skip a tag created moments earlier in the same
+session — the `git push` output shows only the commit ref update, with no
+`* [new tag]` line, and it does not error. Don't assume success from the
+absence of an error. After pushing, confirm with:
+
+```bash
+git ls-remote --tags origin | grep "v${VERSION}"
+```
+
+If it's missing, push the tag explicitly:
+
+```bash
+git push origin "v${VERSION}"
+```
+
 **Important — tagging does NOT trigger a build.** `.github/workflows/ci.yml`
 runs on every push/PR regardless of tags (tests, lint, typecheck — no Docker).
 `.github/workflows/release.yml` (the Docker build + GHCR push) fires **only**
