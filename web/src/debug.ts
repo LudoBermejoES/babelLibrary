@@ -1,5 +1,6 @@
 import type * as THREE from 'three';
 import type { LibraryGraph } from './wasm';
+import type { VestibuleCounts } from './scene/vestibule';
 
 export interface InstanceCounts {
   books: number;
@@ -12,6 +13,9 @@ export interface BabelDebugHook {
   seed: string;
   wallMeshCountForGallery(index: number): number;
   instanceCountsForGallery(index: number): InstanceCounts;
+  vestibuleMeshCountsForGallery(index: number): { mirrors: number; closets: number };
+  shaftRailingMeshCount(index: number): number;
+  staircaseMatchesFlags(index: number): boolean;
 }
 
 declare global {
@@ -21,6 +25,7 @@ declare global {
 }
 
 const ZERO_COUNTS: InstanceCounts = { books: 0, shelves: 0, lamps: 0 };
+const ZERO_VESTIBULE: VestibuleCounts = { mirrors: 0, closets: 0, staircases: 0 };
 
 /** Exposes generator/scene state for Playwright (behind `?e2e`, doc 09 debug hooks). Never installed otherwise, so production builds carry no e2e surface. */
 export function installDebugHook(
@@ -28,6 +33,7 @@ export function installDebugHook(
   graph: LibraryGraph,
   scene: THREE.Scene,
   instanceCounts: Map<number, InstanceCounts>,
+  vestibuleCounts: Map<number, VestibuleCounts>,
 ): void {
   if (!isE2eMode()) return;
   window.__babel = {
@@ -37,8 +43,9 @@ export function installDebugHook(
       const group = scene.getObjectByName(`gallery-${index}`);
       if (!group) return 0;
       let count = 0;
-      // Direct children only: the nested "instances" group (shelves/lamps/
-      // books) is a different concern, covered by instanceCountsForGallery.
+      // Direct children only: the nested "instances"/"vestibule"/
+      // "shaft-railing" groups are different concerns, covered by their
+      // own debug-hook methods below.
       for (const child of group.children) {
         if ((child as THREE.Mesh).isMesh) count++;
       }
@@ -46,6 +53,24 @@ export function installDebugHook(
     },
     instanceCountsForGallery(index: number): InstanceCounts {
       return instanceCounts.get(index) ?? ZERO_COUNTS;
+    },
+    vestibuleMeshCountsForGallery(index: number): { mirrors: number; closets: number } {
+      const { mirrors, closets } = vestibuleCounts.get(index) ?? ZERO_VESTIBULE;
+      return { mirrors, closets };
+    },
+    shaftRailingMeshCount(index: number): number {
+      const gallery = scene.getObjectByName(`gallery-${index}`);
+      const railing = gallery?.getObjectByName('shaft-railing');
+      return railing?.children.length ?? 0;
+    },
+    staircaseMatchesFlags(index: number): boolean {
+      const expectsStaircase = (vestibuleCounts.get(index) ?? ZERO_VESTIBULE).staircases > 0;
+      const gallery = scene.getObjectByName(`gallery-${index}`);
+      const vestibule = gallery?.getObjectByName('vestibule');
+      const meshCount = vestibule?.children.length ?? 0;
+      // 1 mirror + 2 closets always; a 4th child is the staircase.
+      const hasStaircaseMesh = meshCount > 3;
+      return hasStaircaseMesh === expectsStaircase;
     },
   };
 }
