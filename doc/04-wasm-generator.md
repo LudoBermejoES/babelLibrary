@@ -10,6 +10,7 @@ crates/babel-gen/
 ├── src/
 │   ├── lib.rs            # wasm-bindgen facade (thin; no logic)
 │   ├── gen/
+│   │   ├── config.rs     # ALL world-model constants (single source of truth, see below)
 │   │   ├── mod.rs        # generate(seed, books) -> Layout   (pure, target-independent)
 │   │   ├── graph.rs      # hex gallery graph
 │   │   ├── furnish.rs    # shelf bays, slots, tables, lamps
@@ -23,20 +24,73 @@ Everything under `gen/` compiles natively — determinism tests run with plain `
 
 **RNG**: `rand_pcg::Pcg64` seeded explicitly (or a hand-rolled SplitMix64 — no `rand` default `thread_rng`, no floats from system entropy, no `HashMap` iteration order reaching output). Anything ordered that feeds output uses `Vec` or `BTreeMap`.
 
+## World constants: one module, everything derives
+
+Every world-model number lives as a compile-time constant in `crates/babel-gen/src/gen/config.rs` — changing a value there and recompiling adapts the entire system (generation, capacity math, buffer sizes, colliders, tests, and the frontend) with no other edits:
+
+```rust
+// gen/config.rs — the ONLY place world-model numbers are written as literals.
+pub const SHELF_WALLS_PER_HEX: usize = 4;
+pub const SHELVES_PER_WALL: usize = 5;
+pub const SLOTS_PER_SHELF: usize = 8;      // Borges says 32; deliberately reduced (see fidelity table)
+pub const LAMPS_PER_HEX: usize = 2;
+pub const HEX_SIDE_M: f32 = 4.0;
+pub const CEILING_HEIGHT_M: f32 = 3.2;     // also the staircase rise per full turn
+pub const SHAFT_RADIUS_M: f32 = 1.0;
+pub const RAILING_HEIGHT_M: f32 = 0.9;
+pub const SHELF_BAY_WIDTH_M: f32 = 3.2;
+pub const VESTIBULE_OPENING_M: f32 = 1.2;
+pub const FLOOR0_MIN_GALLERIES: usize = 7;
+pub const FLOOR_TARGET_MAX_GALLERIES: usize = 19;
+
+// Derived — never written as a literal anywhere else:
+pub const SHELVES_PER_HEX: usize = SHELF_WALLS_PER_HEX * SHELVES_PER_WALL;       // 20
+pub const BOOKS_PER_HEX: usize = SHELVES_PER_HEX * SLOTS_PER_SHELF;              // 160
+pub const SLOT_PITCH_M: f32 = SHELF_BAY_WIDTH_M / SLOTS_PER_SHELF as f32;        // 0.40
+```
+
+Rules that make this actually hold:
+
+- **No magic numbers outside `config.rs`**: generation code, buffer emission, and collider math all reference the constants. Grep-auditable — a numeric literal like `160` or `4.0` appearing in `gen/*.rs` outside `config.rs` is a review defect.
+- **Tests assert relationships, not literals**: the native suite checks `gallery.slot_count() == config::BOOKS_PER_HEX` and `galleries_needed(n) == n.div_ceil(config::BOOKS_PER_HEX)` — not `== 160` — so changing a constant doesn't orphan the tests. One dedicated test (`fidelity_defaults`) pins the current default values and exists precisely to fail loudly when someone changes `config.rs`, forcing a conscious update of that one test plus the doc tables.
+- **The frontend never duplicates these**: `graph_json` includes a `config` block (`hexSide`, `ceilingHeight`, `shaftRadius`, `booksPerHex`, …) so the renderer, streaming, and floor-banding math read the constants through the wasm boundary. `web/src/controls/constants.ts` keeps only player-feel constants (walk speed, capsule radius, eye height) that the generator has no stake in.
+- The numbers documented in this file and doc 01's table are the *defaults*; `config.rs` is the operative source of truth in code. Changing a value means updating `config.rs` + the `fidelity_defaults` test + the two doc tables — nothing else.
+
 ## World model
 
-### Gallery graph
+This world model follows Borges' "The Library of Babel" (1941) closely — not just in spirit (hexagonal galleries, endless shelves) but in its specific, textually-stated numbers and structure. See the summary table at the end of this section for the exact figures and their source. Deviating from a well-known text invites "that's not how the library works" bug reports; matching it is free correctness.
 
-- Galleries are hexagons (side 4.0 m, flat-to-flat ≈ 6.93 m, ceiling 3.2 m) on an axial-coordinate hex grid `(q, r)`.
-- Count: `gallery_count = ceil(book_count / slots_per_gallery)` galleries, laid out as a contiguous "blob": start at origin, repeatedly add the unoccupied neighbor cell (chosen by seeded RNG among the frontier) — guarantees a connected graph.
-- Each pair of adjacent occupied cells gets a doorway with probability 1 if it's the spanning-tree edge that connected them (guaranteeing full connectivity), plus extra doorways on remaining shared walls with p = 0.4 (loops make it feel like a library, not a maze).
-- Wall roles per hexagon edge: `Doorway` (1.2 m opening centered in the wall, with frame) or `ShelfWall` (one shelf bay). The spawn gallery's center is the player start, facing the +q doorway.
+### Gallery graph (three dimensions: `q, r, floor`)
 
-### Shelves and slots
+- Galleries are hexagons (side 4.0 m, flat-to-flat ≈ 6.93 m, ceiling 3.2 m) on an axial-coordinate hex grid, now addressed by **`(q, r, floor)`** — the library has multiple vertical levels, exactly as the text describes ("from any hexagon one can see the floors above and below... endlessly").
+- **Wall roles, fixed by the source text**: of a hexagon's 6 walls, exactly **4 are shelf walls** and **2 are open** — one open wall leads to a **vestibule** (small anteroom, see below) that connects horizontally to a neighboring hexagon at the same floor; the other open wall faces the **central shaft** (see below). This is fixed per hexagon, not randomized — every hexagon has this same 4-shelf/2-open shape.
+- **Growth algorithm**: fill floor 0 first via 2D blob growth (start at origin, repeatedly add an unoccupied neighbor cell chosen by seeded RNG among the frontier, guaranteeing a connected floor) until it reaches a target floor size (7–19 hexagons — roughly a hex ring or two around the origin). Once a floor is full, start floor 1 directly above the same `(q, r)` footprint (each occupied floor-0 cell gets a floor-1 counterpart), and so on, until `gallery_count = ceil(book_count / BOOKS_PER_HEX)` hexagons (default `BOOKS_PER_HEX` = 160, from `gen/config.rs`) exist across all floors. A **minimum of 7 galleries** (one full ring) on floor 0 is enforced so small catalogs still feel like a library, with surplus book slots left empty.
+- **Horizontal connectivity** (within a floor): each pair of adjacent occupied cells gets a vestibule-doorway with probability 1 if it's the spanning-tree edge that connected them (guaranteeing full per-floor connectivity), plus extra doorways on remaining shared walls with p = 0.4 (loops make it feel like a library, not a maze). Each hexagon only has room for **one** vestibule (one open wall), so a hexagon with multiple horizontal neighbors shares connectivity through whichever neighbor claimed the spanning-tree edge; excess adjacency in the seeded RNG's candidate list is simply not built (matches the text's terseness on exact tessellation — see design D-borges-fidelity in the OpenSpec change).
+- **Vertical connectivity**: every hexagon that has a floor-`+1` counterpart is connected to it via its vestibule's **spiral staircase** (up), and to its floor-`-1` counterpart (down) if one exists. The staircase occupies the same vestibule as the horizontal doorway (Borges: "through this space, too, there passes a spiral staircase") — one vestibule serves both horizontal and vertical traversal.
+- The spawn gallery is `(0, 0, 0)`; the player starts at its center, facing its vestibule wall.
 
-- One shelf bay per shelf wall: bay width 3.2 m (fits inside the 4.0 m wall), 5 rows, row height 0.55 m, first row bottom at 0.30 m; depth 0.30 m.
-- Slot capacity per row: variable — books have random widths, packed left-to-right until the row is full (see assignment). Nominal capacity ≈ 3.2 m / 0.045 m ≈ 70 spines/row, ~350/bay; with up to 5 shelf walls per gallery, `slots_per_gallery` ≈ 1,200–1,700. For a few-thousand-book catalog this yields a handful of galleries; a **minimum of 7 galleries** (center + ring) is enforced so small catalogs still feel like a library, with surplus slots left empty (empty slots render nothing).
-- Each gallery also gets 0–2 tables and 1–2 lamp props (seeded), placed in the center area, away from doorway paths; they emit colliders.
+### Central shaft
+
+- Every hexagon has, at its center, a **ventilation shaft**: a circular void (radius 1.0 m) bounded by a low railing (height 0.9 m), open through the floor and ceiling so the shaft is a continuous vertical column through every floor of the library at that `(q, r)`.
+- Rendering: looking down or up through the shaft from a hexagon reveals the floor above/below at the same `(q, r)` if it exists in the generated layout (or open darkness if it doesn't — the library implies more floors than are ever generated, matching the text's "endlessly"). This is a real visual feature, not just flavor — see doc 05.
+- Collision: the railing is a ring of small AABB segments (matching the existing wall-approximation technique) preventing the player from falling in; no gameplay penalty for v1 (no fall damage/death), but per Borges the shaft is implied bottomless.
+
+### Vestibule
+
+- One open wall per hexagon leads to a small vestibule (2.0 m × 1.5 m antechamber) between the hexagon and its horizontal neighbor (if any) and/or the vertical staircase.
+- Contents, per the text: a **spiral staircase** (if a vertical neighbor exists — up, down, or both), **two small closets** flanking the passage (non-functional set dressing: one implies a sleeping alcove, one a lavatory — closed doors, not enterable), and a **mirror** on the wall opposite the hexagon entrance ("faithfully duplicates appearances" — rendered as a real reflective-material plane in v1, a cheap `MeshStandardMaterial` with high metalness/low roughness and an environment map, not a full planar-reflection render pass).
+- If a hexagon has no horizontal neighbor and no vertical neighbor on a given side, its vestibule is still generated (per the text, every hexagon has one) but the staircase/doorway it would lead to is simply absent — the vestibule becomes a small dead-end alcove with the mirror and closets, still walkable.
+
+### Shelves and slots (fixed capacity, not variable)
+
+- **Exactly 20 shelves per hexagon**: 4 shelf walls × 5 shelves each (Borges: "each wall of each hexagon is furnished with five bookshelves").
+- **Exactly 8 books per shelf** — a **deliberate deviation** from the text (Borges says 32 per shelf; the Spanish original and Hurley translation both confirm 32, and "35" seen in some web copies of the Irby translation is a transcription artifact). We use 8 so that a real, modest-sized catalog spreads across more galleries (more library to wander) and each spine is a larger, easier interaction target. **Fixed capacity: 160 books per hexagon** (20 shelves × 8), no variable row-packing math — this replaces the old "pack by width until the row is full" model entirely. Slot width is computed backward from the fixed count: shelf width 3.2 m / 8 = 0.40 m nominal slot pitch, with each book's rendered width (see Spine presentation) centered in its slot rather than determining slot count.
+- Shelf bay per shelf wall: bay width 3.2 m, 5 rows, row height 0.55 m, first row bottom at 0.30 m, depth 0.30 m (unchanged from the original plan; only the slot-count model changed).
+- Each gallery also gets 0–2 tables (seeded), placed in the ring between the central shaft and the shelf walls, away from doorway/vestibule paths; they emit colliders.
+
+### Lighting (fixed, not a rendering-only decision — generator emits placement)
+
+- **Exactly 2 lamps per hexagon**, positioned crosswise (opposite corners of the hexagon, not adjacent) per the text ("two of these bulbs in each hexagon, set crosswise"). The generator emits lamp prop transforms; doc 05 covers the actual light emission (always-on, deliberately dim, per Borges: "the light they give is insufficient, and unceasing").
 
 ### Spine presentation
 
@@ -44,7 +98,7 @@ Per book: width 30–60 mm, height 180–260 mm, depth 120–160 mm (uniform dra
 
 ### Assignment
 
-Input books arrive **already sorted by the frontend** (author, title, id). Assignment fills slots in a fixed traversal order: gallery blob order → wall index 0–5 → row bottom-to-top → left-to-right. Result: alphabetical-by-author flow through the library, deterministic given the input order.
+Input books arrive **already sorted by the frontend** (author, title, id). Assignment fills slots in a fixed traversal order: floor 0→N → gallery blob order within a floor → shelf-wall index 0–3 → row bottom-to-top → left-to-right (8 slots). Result: alphabetical-by-author flow through the library, deterministic given the input order — a reader who takes the stairs down a floor and keeps walking finds the alphabetical sequence continuing.
 
 **Determinism note**: per-book values are drawn from `rng(seed, book_id)` (a fresh stream keyed by both), *not* from a shared sequential stream — so inserting a book into the catalog changes placement (unavoidable) but not every other book's spine appearance.
 
@@ -63,8 +117,16 @@ impl Library {
     #[wasm_bindgen(constructor)]
     pub fn new(seed: u64, book_ids: &[u32], color_hints: &[u32]) -> Library;
 
-    /// Small JSON: galleries, centers, doorway graph, spawn point.
-    /// { galleries: [{ index, center: [x,z], doorways: [{wall, toGallery}] }...],
+    /// Small JSON: galleries (now 3D-addressed), centers, doorway/staircase
+    /// graph, spawn point — plus the world constants (gen/config.rs) so the
+    /// frontend derives geometry from them instead of duplicating numbers.
+    /// { config: { hexSide, ceilingHeight, shaftRadius, railingHeight,
+    ///     booksPerHex, slotsPerShelf, shelvesPerWall, shelfWallsPerHex,
+    ///     vestibuleOpening },
+    ///   galleries: [{ index, q, r, floor, center: [x,y,z],
+    ///     vestibuleWall: 0-5,
+    ///     horizontalNeighbor: index | null,
+    ///     floorAbove: index | null, floorBelow: index | null }...],
     ///   spawn: { gallery, position: [x,y,z], yaw } }
     pub fn graph_json(&self) -> String;
 
@@ -77,6 +139,8 @@ impl Library {
     pub fn shelf_transforms(&self, gallery: u32) -> js_sys::Float32Array; // bays, 16/inst
     pub fn prop_transforms(&self, gallery: u32) -> js_sys::Float32Array;  // interleaved [kind,f32x16]
     pub fn wall_segments(&self, gallery: u32) -> js_sys::Float32Array;    // for wall/arch meshes
+    pub fn vestibule(&self, gallery: u32) -> js_sys::Float32Array;        // fixed-layout struct, see below
+    pub fn shaft_colliders(&self, gallery: u32) -> js_sys::Float32Array;  // railing AABBs, 6/box
     pub fn colliders(&self, gallery: u32) -> js_sys::Float32Array;        // 6/AABB
 }
 ```
@@ -88,12 +152,14 @@ impl Library {
 | `book_transforms` | 16 f32 | column-major 4×4 world matrix per spine, ready for `InstancedMesh.instanceMatrix` (`setMatrixAt` bypassed by writing the array directly) |
 | `book_colors` | 3 f32 | linear-space RGB per instance for `InstancedMesh.instanceColor` |
 | `book_ids` | 1 u32 | catalog id per instance, index-aligned with the two above — the raycast hit's `instanceId` indexes straight into this |
-| `shelf_transforms` | 16 f32 | one matrix per shelf-bay GLB instance |
-| `prop_transforms` | 17 f32 | `[kind, m0..m15]`; kind 0 = table, 1 = lamp |
-| `wall_segments` | 8 f32 | `[x1,z1,x2,z2,height,kind,doorCenter,doorWidth]`; kind 0 = solid, 1 = doorway (frontend builds wall meshes with a hole) |
-| `colliders` | 6 f32 | `minX,minY,minZ,maxX,maxY,maxZ` static AABBs: wall pieces (doorways emit two flanking boxes + lintel), shelf bays, tables |
+| `shelf_transforms` | 16 f32 | one matrix per shelf-bay GLB instance (always 4 per hexagon) |
+| `prop_transforms` | 17 f32 | `[kind, m0..m15]`; kind 0 = table, 1 = lamp (always 2 lamps, crosswise) |
+| `wall_segments` | 8 f32 | `[x1,z1,x2,z2,height,kind,doorCenter,doorWidth]`; kind 0 = solid (shelf wall), 1 = vestibule opening (frontend builds wall meshes with a hole) |
+| `vestibule` | fixed 24 f32 (single record, not instanced) | `[hasStairUp, hasStairDown, hasHorizontalNeighbor, mirrorTransform(16), closetLeftPos(3), closetRightPos(3)]` — one per gallery; the frontend builds the vestibule room, mirror plane, closet doors, and staircase mesh (present only where `hasStairUp`/`hasStairDown` is set) from this |
+| `shaft_colliders` | 6 f32 | `minX,minY,minZ,maxX,maxY,maxZ` AABBs forming the central shaft's railing ring (staircase-approximated, same technique as curved walls) |
+| `colliders` | 6 f32 | `minX,minY,minZ,maxX,maxY,maxZ` static AABBs: wall pieces (vestibule opening emits two flanking boxes + lintel), shelf bays, tables |
 
-Spine matrices already include: slot position on the shelf row, spine-out orientation toward the room, and per-book scale (w/h/d). The frontend never re-derives book geometry math.
+Spine matrices already include: slot position on the shelf row, spine-out orientation toward the room, and per-book scale (w/h/d). The frontend never re-derives book geometry math. All hexagons have identical shelf-wall/prop counts (4 shelf bays, 2 lamps) since the shape is fixed by the source text, not derived per-gallery — `shelf_transforms` and `prop_transforms` lengths are therefore constant across every gallery, which the native test suite asserts directly.
 
 ### TypeScript facade
 
@@ -119,9 +185,24 @@ export async function createLibrary(seed: bigint, books: BookMeta[]): Promise<{
 
 `getGallery` calls each buffer method and immediately `slice()`s the result — **wasm memory views are invalidated whenever wasm memory grows**, and slicing is the cheap insurance (a gallery's buffers total ~100–300 KB).
 
+## Source fidelity: exact numbers from the text
+
+| Element | Value used here | Notes |
+|---|---|---|
+| Shelf walls per hexagon | 4 of 6 | Matches the text. Remaining 2 walls: one vestibule, one central shaft |
+| Shelves per shelf wall | 5 | Matches the text |
+| Total shelves per hexagon | 20 | 4 × 5 |
+| Books per shelf | **8 (deviation — Borges says 32)** | Spanish original + Hurley confirm 32 ("35" is a web-transcription artifact of some Irby copies). We deliberately use 8: real catalogs are far smaller than Babel's, so fewer books per gallery spreads the collection across more galleries (more library to wander) and makes each spine a bigger interaction target |
+| Fixed capacity per hexagon | 160 books | 20 × 8 — replaces the old variable-packing model |
+| Lamps per hexagon | 2, crosswise, always dim | Matches the text. Never fully dark, never bright |
+| Vestibule contents | spiral staircase (up/down where present), 2 closets, 1 mirror | Matches the text. One vestibule per hexagon serves both horizontal and vertical connectivity |
+| Central shaft | railinged void, open through all floors | Matches the text. Visual + collision element, no fall damage in v1 |
+
+This table is the source of truth for "why these numbers"; if it ever needs to change, change it here and re-derive the rest of this document, not the other way around. Deviations from Borges are called out explicitly — everything not marked as a deviation follows the text.
+
 ## Sizing / performance envelope
 
-3,000 books ≈ 3,000×16×4 B ≈ 200 KB of transforms — trivial. Generation is O(n log n) (sort is done JS-side; assignment is linear; graph is tiny). Expected wall-clock < 20 ms for 3k books; budget 100 ms before it needs `console.time` attention. Wasm binary target < 200 KB post `wasm-opt` (no serde in the hot path helps; `graph_json` may use serde_json — acceptable, or hand-format).
+160 books/hexagon is now a hard per-gallery ceiling, so a 3,000-book catalog spans ⌈3000/160⌉ = 19 hexagons minimum, padded up to the 7-hexagon floor-0 minimum. Per-gallery buffer sizes are now bounded and predictable: at most 160×16×4 B ≈ 10 KB of book transforms per gallery (vs. the old unbounded-per-gallery estimate). Generation is O(n log n) (sort is done JS-side; assignment is linear; graph is small — floors and hexagon counts scale with `book_count / 160`, not with book count directly). Expected wall-clock < 20 ms for a few-thousand-book catalog; budget 100 ms before it needs `console.time` attention. Wasm binary target < 200 KB post `wasm-opt` (no serde in the hot path helps; `graph_json` may use serde_json — acceptable, or hand-format).
 
 ## Native test suite (`tests/determinism.rs`)
 
@@ -130,6 +211,11 @@ export async function createLibrary(seed: bigint, books: BookMeta[]): Promise<{
 - `different_seeds_differ`: seed 1 vs 2 → graphs differ.
 - `catalog_hint_wins`: book with hint 0x336699 → spine color matches exactly.
 - `spine_bounds`: all dims within configured min/max.
-- `graph_connected`: BFS from spawn reaches every gallery.
-- `doorway_clearance`: every doorway opening ≥ 0.9 m between flanking collider AABBs.
-- `min_galleries`: 10-book catalog still yields ≥ 7 galleries.
+- `fixed_hexagon_shape`: every generated hexagon has exactly `config::SHELF_WALLS_PER_HEX` shelf walls, `config::SHELVES_PER_HEX` shelves, `config::LAMPS_PER_HEX` lamps, 1 vestibule — regardless of position in the graph (asserted against the constants module, not literals, so a `config.rs` change adapts the test).
+- `shelf_capacity_matches_config`: every hexagon's total slot count equals `config::BOOKS_PER_HEX`; galleries needed for N books equals `N.div_ceil(config::BOOKS_PER_HEX)`.
+- `fidelity_defaults`: pins the current default values (4 walls, 5 shelves/wall, 8 slots/shelf → 160/hexagon, 2 lamps) as literals — the one test that intentionally breaks when `config.rs` changes, forcing a conscious doc-table update.
+- `graph_connected`: BFS (using both horizontal-neighbor and vertical-staircase edges) from spawn reaches every gallery, on every floor.
+- `floors_align_vertically`: every hexagon with a floor-`+1` counterpart has an identical `(q, r)`; the vestibule's `hasStairUp`/`hasStairDown` flags match whether that counterpart actually exists in the layout.
+- `doorway_clearance`: every vestibule opening ≥ 0.9 m between flanking collider AABBs.
+- `min_galleries`: 10-book catalog still yields ≥ 7 galleries on floor 0 before any floor 1 hexagon is created.
+- `floor_fills_before_next_floor_starts`: no floor-N+1 hexagon exists unless floor N has reached its target size.

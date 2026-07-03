@@ -23,29 +23,36 @@
 
 ## 3. Procedural layout generator (M2 — doc [04](../../../doc/04-wasm-generator.md))
 
-- [ ] 3.1 RED: write the native determinism suite first (doc 04 list): identical output for same (seed, catalog); N books ⇒ N unique slots; seeds differ; hint wins; spine bounds; graph connectivity; ≥0.9 m doorway clearance; ≥7 galleries minimum — all failing against stub types
-- [ ] 3.2 GREEN: hex gallery-graph generation (blob growth, spanning-tree + extra doorways, walls/shelf placement) until graph tests pass
-- [ ] 3.3 GREEN: book→slot assignment (fixed traversal order over pre-sorted input; per-book dims/colors keyed by (seed, book id)) until assignment tests pass
-- [ ] 3.4 RED→GREEN: buffer-emission tests (stride/length/alignment of transforms, colors, id map, wall segments, AABBs per doc 04 layouts) → implement emission
-- [ ] 3.5 Add `proptest` property tests: placement totality, uniqueness, in-bounds across fuzzed (seed, catalog size)
-- [ ] 3.6 RED→GREEN: vitest tests against the real wasm build via the `web/src/wasm/` facade (buffer shapes for a 100-book catalog, immediate copy-out, no `any` at the boundary via `tsc --noEmit`) → implement wasm-bindgen bindings + facade
+> **Borges fidelity (D11 in design.md)**: this section was rewritten before implementation began, following direct research into Jorge Luis Borges' "The Library of Babel." Every hexagon has a fixed shape (4 shelf walls / 1 vestibule / 1 shaft, 160-book capacity — a deliberate reduction from Borges' 640, see doc 04's fidelity table), addressed in 3D `(q, r, floor)`, connected horizontally through vestibules and vertically through spiral staircases in those same vestibules.
+
+- [ ] 3.1 RED: write the native determinism suite first (doc 04 list), asserting against `gen/config.rs` constants (not literals — plus one `fidelity_defaults` test pinning the current defaults): identical output for same (seed, catalog); N books ⇒ N unique slots; seeds differ; hint wins; spine bounds; **fixed hexagon shape (`SHELF_WALLS_PER_HEX`/`SHELVES_PER_HEX`/`BOOKS_PER_HEX`/`LAMPS_PER_HEX` — defaults 4/20/160/2 — every gallery, regardless of position)**; graph connectivity across floors (horizontal + staircase edges); **floors fill before the next floor starts**; **vestibule stair flags match real floor neighbors**; ≥0.9 m vestibule-opening clearance; ≥7 galleries minimum on floor 0 — all failing against stub types (the `config.rs` constants module is written as part of this task, since the tests import it)
+- [ ] 3.2 GREEN: hex gallery-graph generation — floor 0 via blob growth (spanning-tree + extra vestibule doorways) to a target size (7–19 hexagons), then floor 1+ generated directly above filled floor-0 `(q, r)` positions once floor 0 reaches its target, repeating until `ceil(book_count / BOOKS_PER_HEX)` galleries exist — until graph/floor tests pass
+- [ ] 3.3 GREEN: fixed per-gallery furnishing driven by `config.rs` — always `SHELF_WALLS_PER_HEX` × `SHELVES_PER_WALL` × `SLOTS_PER_SHELF` slots (defaults 4 × 5 × 8 = 160), always `LAMPS_PER_HEX` crosswise lamps, always 1 vestibule (mirror + 2 closets + doorway/staircase flags reflecting real neighbors); no world-model numeric literal outside `config.rs` — until shape tests pass
+- [ ] 3.4 GREEN: book→slot assignment (fixed traversal order: floor ascending → gallery blob order → shelf-wall 0–3 → row → slot 0–7, over pre-sorted input; per-book dims/colors keyed by (seed, book id)) until assignment tests pass
+- [ ] 3.5 RED→GREEN: buffer-emission tests (stride/length/alignment of transforms, colors, id map, wall segments, the fixed-layout `vestibule` record, `shaft_colliders`, general `colliders` per doc 04 layouts) → implement emission
+- [ ] 3.6 Add `proptest` property tests: placement totality, uniqueness, in-bounds across fuzzed (seed, catalog size); vertical alignment (every floor-N+1 gallery's `(q, r)` matches an occupied floor-N gallery) holds under fuzzing too
+- [ ] 3.7 RED→GREEN: vitest tests against the real wasm build via the `web/src/wasm/` facade (buffer shapes for a 100-book catalog, immediate copy-out, no `any` at the boundary via `tsc --noEmit`; graph JSON includes `(q, r, floor)` + neighbor refs + the `config` constants block, and buffer lengths are consistent with `config.booksPerHex` — the frontend never hardcodes world numbers) → implement wasm-bindgen bindings + facade
 
 ## 4. Scene rendering (M3 — doc [05](../../../doc/05-rendering.md))
 
 - [ ] 4.1 RED→GREEN: Playwright tests for boot (canvas + zero console errors) and WebGL2-missing error page (flag-disabled context) → renderer setup (ACESFilmic, pixel-ratio cap, resize, context-lost handler)
-- [ ] 4.2 RED→GREEN: boot-integration test — seeded fixture catalog renders N galleries, `?seed=` override changes layout (Playwright reads `window.__babel` debug hook) → catalog fetch → generator → gallery architecture from wall segments
-- [ ] 4.3 Assets: source CC0 GLBs (shelf bay, table, lamp, ~5 unit book archetypes; box placeholders first), meshopt pipeline, CREDITS.md; acceptance test: assets load without console errors, budget test still green
-- [ ] 4.4 RED→GREEN: instance-count test (books rendered == books in fixture catalog, via debug hook) → `InstancedMesh` book rendering (archetype = id % 5, direct buffer writes)
-- [ ] 4.5 Lighting + fog (exploratory) → acceptance test written when settled: screenshot-based luminance check that no traversable position renders fully dark
-- [ ] 4.6 RED→GREEN: streaming test (crossing a doorway: entered gallery already populated — no pop-in; two-hop gallery disposed; draw calls bounded) → gallery streaming + buffer cache
-- [ ] 4.7 Performance gate (`@perf` Playwright, doc 09 §5): scripted 60 s walk over 3 galleries with 2,000+ books in view asserts ≥30 FPS floor and <100 draw calls via `?debug` HUD stats
+- [ ] 4.2 RED→GREEN: boot-integration test — seeded fixture catalog renders N galleries, `?seed=` override changes layout (Playwright reads `window.__babel` debug hook) → catalog fetch → generator → gallery architecture from wall segments (floor/ceiling hex with shaft hole, 4 shelf walls + 1 vestibule opening, always)
+- [ ] 4.3 Assets: source CC0 GLBs (shelf bay, table, lamp, mirror material, closet door, spiral staircase, ~5 unit book archetypes; box placeholders first), meshopt pipeline, CREDITS.md; acceptance test: assets load without console errors, budget test still green
+- [ ] 4.4 RED→GREEN: instance-count test (books rendered == books in fixture catalog, via debug hook; always 4 shelf-bay instances + 2 lamp instances per gallery) → `InstancedMesh` book rendering (archetype = id % 5, direct buffer writes)
+- [ ] 4.5 RED→GREEN: vestibule/shaft test (vestibule room + mirror + closets always present; staircase mesh present only where the buffer's stair-up/stair-down flags are set; shaft railing renders and blocks the raycast) → vestibule room geometry, mirror material (env-map reflection, not a render-pass reflection), closet doors, staircase mesh, shaft railing + floor/ceiling holes
+- [ ] 4.6 RED→GREEN: shaft-visibility test (a gallery with a generated floor-below counterpart shows that gallery through the shaft opening; a gallery with no floor-below shows none) → shaft-visible lightweight floor-above/below groups (doc 05 streaming)
+- [ ] 4.7 Lighting + fog (exploratory, fixed 2-lamps-per-gallery per Borges) → acceptance test written when settled: screenshot-based luminance check that no traversable position renders fully dark, and no traversable position is brighter than the "insufficient, dim" intent (qualitative — spot-checked, not a hard threshold)
+- [ ] 4.8 RED→GREEN: streaming test (crossing a vestibule opening: entered gallery already populated — no pop-in; crossing a staircase to a new floor: destination gallery already populated; two-hop gallery disposed in both horizontal and vertical directions; draw calls bounded) → gallery streaming + buffer cache, now covering horizontal + vertical adjacency
+- [ ] 4.9 Performance gate (`@perf` Playwright, doc 09 §5): scripted 60 s walk over 3 galleries (including one staircase transition) with 2,000+ books in view asserts ≥30 FPS floor and <100 draw calls via `?debug` HUD stats
 
 ## 5. First-person navigation (M4 — doc [06](../../../doc/06-navigation-collision.md))
 
-- [ ] 5.1 RED: vitest suite for pure movement/collision first: wall block + slide (tangential velocity preserved), 1.2 m doorway pass at multiple angles, deep-penetration fallback, dt cap, frame-rate independence (30 vs 120 FPS distance within 5%)
-- [ ] 5.2 GREEN: movement model (exponential smoothing, eye 1.7 m, 3 m/s, no vertical) + capsule-vs-AABB push-out with y-band prefilter until 5.1 passes
-- [ ] 5.3 RED→GREEN: Playwright tests (pointer lock on click, WASD moves camera, `Esc` shows pause overlay, `pointerlockchange` as truth) → input-mode state machine + PointerLockControls integration
-- [ ] 5.4 RED→GREEN: gallery-tracking test (hysteresis: no flip-flop at doorway plane; collider set + streaming swap on change) → tracking implementation
+- [ ] 5.1 RED: vitest suite for pure movement/collision first: wall block + slide (tangential velocity preserved), 1.2 m vestibule-opening pass at multiple angles, deep-penetration fallback, dt cap, frame-rate independence (30 vs 120 FPS distance within 5%)
+- [ ] 5.2 GREEN: movement model (exponential smoothing, eye 1.7 m, 3 m/s, no jump/fly input) + capsule-vs-AABB push-out with y-band prefilter until 5.1 passes
+- [ ] 5.3 RED: vitest suite for the staircase helix: entering the staircase footprint sets `verticalMode: 'stairs'`; forward movement along it advances `position.y` per the fixed rise-per-turn geometry; reaching the top/bottom lands exactly at the next floor's flat height; stepping off radially returns to `verticalMode: 'flat'` without snapping
+- [ ] 5.4 GREEN: parametric helix movement (fixed radius, rise-per-turn = ceiling height) reprojecting WASD forward/back onto the helix tangent, entry/exit mode switching — until 5.3 passes
+- [ ] 5.5 RED→GREEN: Playwright tests (pointer lock on click, WASD moves camera, `Esc` shows pause overlay, `pointerlockchange` as truth) → input-mode state machine + PointerLockControls integration
+- [ ] 5.6 RED→GREEN: gallery-tracking test (hysteresis: no flip-flop at vestibule-opening plane or floor-height boundary; horizontal + vertical collider set and streaming swap on change) → tracking implementation, now covering `(q, r, floor)` transitions
 
 ## 6. Book interaction & EPUB reader (M5 — doc [07](../../../doc/07-interaction-reader.md))
 

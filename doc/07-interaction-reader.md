@@ -3,7 +3,7 @@
 ## Targeting (every frame while WALKING)
 
 - `Raycaster` from camera center (`setFromCamera({x:0, y:0})`), `far = 2.5` (interaction range doubles as ray cutoff — cheap).
-- Test **only book `InstancedMesh`es of the current gallery** (books in neighbor galleries are >2.5 m away through a doorway in practice; correctness beats micro-precision here). Hit → `(mesh, instanceId)` → `bookId = mesh.userData.bookIds[instanceId]` → `BookMeta` from the in-memory map (built once from `/api/books`; no network at look time).
+- Test **only book `InstancedMesh`es of the current gallery** (books in neighbor galleries are >2.5 m away through a vestibule in practice; correctness beats micro-precision here). Hit → `(mesh, instanceId)` → `bookId = mesh.userData.bookIds[instanceId]` → `BookMeta` from the in-memory map (built once from `/api/books`; no network at look time).
 - Raycasting 5 instanced meshes × ~2k instances is fast (three does instance-level sphere pre-tests), but guard anyway: run the raycast every other frame (interaction at 30 Hz is imperceptible; render stays at 60).
 
 ## Highlight & HUD

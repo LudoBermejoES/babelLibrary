@@ -30,7 +30,9 @@ Full list in doc 04. Spec coverage:
 | `different_seeds_differ` | Different seeds differ (from original spec intent) |
 | `catalog_hint_wins` | Catalog hint wins |
 | `spine_bounds` | Every book placed and renderable (dimension bounds) |
-| `graph_connected`, `doorway_clearance`, `min_galleries` | navigation traversal + doorway specs (data-side guarantee) |
+| `fixed_hexagon_shape`, `shelf_capacity_is_160` | Fixed hexagon shape · Capacity is fixed, not derived |
+| `graph_connected`, `floors_align_vertically`, `floor_fills_before_next_floor_starts` | Every gallery is reachable · Additional floors start only after a floor fills |
+| `doorway_clearance`, `min_galleries` | navigation traversal + vestibule-opening specs (data-side guarantee) |
 
 Plus a `proptest` property test (seed × catalog-size fuzz): placement is total, unique, in-bounds.
 
@@ -49,11 +51,12 @@ Plus a `proptest` property test (seed × catalog-size fuzz): placement is total,
 
 ## 3. Frontend unit — `vitest` (no browser, no three rendering)
 
-- **Collision math** (pure functions in `controls/collide.ts`): wall block + slide (velocity tangential component preserved), 1.2 m doorway pass at multiple approach angles, deep-penetration fallback, `dt` cap. Spec: Blocked by a wall · Passing a doorway.
+- **Collision math** (pure functions in `controls/collide.ts`): wall block + slide (velocity tangential component preserved), 1.2 m vestibule-opening pass at multiple approach angles, deep-penetration fallback, `dt` cap. Spec: Blocked by a wall · Passing a vestibule opening.
+- **Staircase helix math** (pure functions in `controls/stairs.ts`): entering/exiting the helix footprint toggles `verticalMode`; forward movement along the helix advances `position.y` at the fixed rise-per-turn rate; reaching either end lands exactly at the adjoining floor's height. Spec: Climbing a staircase · Descending a staircase · No staircase where no floor neighbor exists.
 - **Frame-rate independence**: simulate 2 s of held forward at dt=1/30 vs dt=1/120 → distance within 5%. Spec: Frame-rate independence.
 - **API client**: zod-parse of good/bad payloads; timeout/retry behavior with a mocked fetch.
 - **Dwell timer**: same-book instanceId flicker doesn't reset; book change does. Spec: Dwelling on a book.
-- **Wasm facade** (runs the real wasm in Node via vitest): buffers have expected strides/lengths for a 100-book catalog; `bookIds` aligns with transforms count; `tsc --noEmit` (separate CI step) guards the no-`any`-boundary spec.
+- **Wasm facade** (runs the real wasm in Node via vitest): buffers have expected strides/lengths for a 100-book catalog (incl. the fixed-size `vestibule` record and `shaft_colliders`); `bookIds` aligns with transforms count; `tsc --noEmit` (separate CI step) guards the no-`any`-boundary spec.
 
 ## 4. End-to-end — Playwright (chromium; real server + seeded fixture catalog + real wasm)
 
@@ -71,8 +74,10 @@ Runs against `scripts/e2e-env.sh` (release server, tiny 40-book fixture with 1 e
 | `broken_epub` | target the broken row → error card with title; close → still walkable | Broken EPUB URL |
 | `lazy_epubs` | scripted 20 s walk, no clicks → **zero** requests to `/epubs/` or external hosts (route interception) | No content precomputation |
 | `webgl_missing` | launch with `--disable-webgl` flags → error panel, no blank canvas | WebGL unavailable |
+| `climb_stairs` | teleport onto a known staircase footprint, walk forward → elevation increases smoothly, lands on the floor-above gallery, its content already present | Climbing a staircase · Seamless floor transition |
+| `shaft_glimpse` | teleport to a gallery with a generated floor-below counterpart, look down the shaft → that gallery's geometry visible through the opening | Looking down the shaft |
 
-Debug hooks (dev/e2e builds only, behind `?e2e`): `window.__babel = { teleport(x,z,yaw), targetedBookId, stats: {fps30sMin, drawCalls} }`.
+Debug hooks (dev/e2e builds only, behind `?e2e`): `window.__babel = { teleport(q,r,floor,x,y,z,yaw), targetedBookId, stats: {fps30sMin, drawCalls} }` — teleport now addresses a specific `(q, r, floor)` gallery plus a local offset, since position alone no longer determines which gallery (and floor) the player is in.
 
 ## 5. Performance gate — semi-automated
 
@@ -80,8 +85,8 @@ Playwright `perf_walk` (tagged `@perf`, run on demand, not per-commit): 3,000-bo
 
 ## 6. Manual QA checklist (release)
 
-- Feel: walk speed, mouse sensitivity, no doorway snags in 5 minutes of wandering (all 6 hex wall orientations).
-- Visual: no z-fighting, no light pops on gallery swap, fog looks right through doorways.
+- Feel: walk speed, mouse sensitivity, no vestibule-opening snags in 5 minutes of wandering (all 6 hex wall orientations); staircase climbing/descending feels natural, not disorienting.
+- Visual: no z-fighting, no light pops on gallery swap, fog looks right through vestibule openings and the shaft; the mirror reads as a mirror, not a flat gray plane.
 - Reader: a long real EPUB (Moby-Dick) — TOC, 20+ page turns, resize mid-read, reopen.
 - External EPUB row on the deployed site (CORS reality check).
 - Fresh-machine README run-through (spec: New machine onboarding) — performed once per release by following README.md literally in a clean container/VM.

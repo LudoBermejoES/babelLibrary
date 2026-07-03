@@ -12,12 +12,12 @@ The name honors Borges' *Library of Babel* — hexagonal galleries, endless shel
 
 ## Status
 
-**Planning complete, implementation starting.** There is no runnable code yet; what this repository currently contains is a full, build-ready plan:
+**In progress.** Milestones M0 (toolchain + CI) and M1 (book catalog API) are implemented and tested; the procedural generator (M2) is next.
 
 | Where | What |
 |---|---|
 | [doc/](doc/README.md) | The complete implementation plan: architecture, data/API contracts, generation algorithm, rendering, navigation, reader, build/deploy, testing, roadmap |
-| [openspec/changes/library-3d-environment/](openspec/changes/library-3d-environment/) | The OpenSpec change: proposal, testable requirement specs (7 capabilities), design decisions, and the 38-task implementation checklist |
+| [openspec/changes/library-3d-environment/](openspec/changes/library-3d-environment/) | The OpenSpec change: proposal, testable requirement specs (7 capabilities), design decisions, and the implementation checklist ([tasks.md](openspec/changes/library-3d-environment/tasks.md)) |
 
 Development follows **TDD end to end** — every task starts with a failing test, and CI gates every merge (see [doc/09-testing.md](doc/09-testing.md)).
 

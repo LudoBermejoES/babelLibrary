@@ -86,7 +86,7 @@ babelLibrary/
 3. Calls `Library.generate(seed, ids, colorHints)` in the wasm module (API in doc 04). Seed = `0xBABE1` unless `?seed=` is present.
 4. For the spawn gallery and its neighbors, pulls instance buffers + collision AABBs, **copies them out of wasm memory immediately** (views are invalidated when wasm memory grows), and builds `InstancedMesh`es (doc 05).
 5. Render loop starts. Per frame: controls → collision → raycast → render. **No wasm or network calls occur inside the render loop.**
-6. On doorway crossing: dispose the gallery now two hops away, build the newly adjacent one from generator buffers (again: pull, copy, build — outside the frame's hot path, spread over idle callbacks if needed).
+6. On vestibule or staircase crossing (horizontal or vertical move to a new gallery): dispose the gallery now two hops away, build the newly adjacent one from generator buffers (again: pull, copy, build — outside the frame's hot path, spread over idle callbacks if needed).
 7. On book click: metadata is already in memory; the EPUB is fetched only now, by the reader overlay.
 
 ## Interop contract (the rule that keeps this fast)
