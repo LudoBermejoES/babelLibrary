@@ -1,5 +1,6 @@
 import './style.css';
 import { createRenderer, isWebGL2Available } from './scene/renderer';
+import { createAmbientLight, createFog } from './scene/lighting';
 import { GalleryStreamer } from './scene/streaming';
 import { fetchBooks } from './api/books';
 import type { BookMeta } from './api/types';
@@ -72,6 +73,10 @@ export async function boot(): Promise<void> {
 
   const { renderer, scene, camera } = createRenderer(app);
   camera.position.set(0, 1.7, 3);
+  if (!isE2eMode() || !new URLSearchParams(window.location.search).has('noLighting')) {
+    scene.add(createAmbientLight());
+    scene.fog = createFog();
+  }
 
   const seed = seedFromUrl();
   const books = applyE2eBookCountOverride(await fetchBooks());

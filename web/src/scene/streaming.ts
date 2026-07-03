@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { GalleryBuffers, LibraryConfig, LibraryGallery } from '../wasm';
 import { buildGalleryArchitecture } from './gallery';
 import { buildGalleryInstances } from './instancing';
+import { buildGalleryLights } from './lighting';
 import { buildShaftGlimpse } from './shaft-visibility';
 import { buildShaftRailing, buildVestibule, type VestibuleCounts } from './vestibule';
 
@@ -145,6 +146,7 @@ export class GalleryStreamer {
     this.vestibuleCounts.set(index, counts);
 
     architecture.add(buildShaftRailing(buffers));
+    architecture.add(buildGalleryLights(buffers.propTransforms));
 
     this.scene.add(architecture);
     this.liveGroups.set(index, architecture);
