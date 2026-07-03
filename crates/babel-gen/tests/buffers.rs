@@ -200,3 +200,36 @@ fn vestibule_opening_clearance_from_real_colliders() {
         }
     }
 }
+
+#[test]
+fn spawn_pose_stands_clear_of_the_shaft_and_faces_a_shelf_wall() {
+    // Regression: the frontend spawned the camera at the exact hex center
+    // (the shaft's location) with no facing direction, so on load the
+    // player found themselves floating inside the 1.0 m shaft opening
+    // looking at nothing — the scene looked mostly black/empty despite
+    // correct lighting and geometry. spawn_pose must place the player on
+    // solid floor, outside the shaft radius, facing into the room.
+    let books = fake_books(50);
+    let layout = generate(9, &books);
+    let gallery = &layout.galleries[layout.spawn_gallery];
+
+    let (px, _py, pz) = emit::hex_center(gallery);
+    let (sx, _sy, sz, yaw) = emit::spawn_pose(gallery);
+
+    let distance_from_center = ((sx - px).powi(2) + (sz - pz).powi(2)).sqrt();
+    assert!(
+        distance_from_center > config::SHAFT_RADIUS_M,
+        "spawn position ({sx}, {sz}) must stand outside the {} m shaft radius (hex center {px}, {pz}), got distance {distance_from_center}",
+        config::SHAFT_RADIUS_M
+    );
+
+    // Facing yaw must point outward, away from the hex center and toward a
+    // shelf wall — the intended "arrival" view is shelves, not the shaft.
+    // wall_normal's convention is (cos(angle), sin(angle)) for (x, z), so
+    // the direction's angle is atan2(dz, dx), not atan2(dx, dz).
+    let away_from_center = ((sz - pz).atan2(sx - px) - yaw).rem_euclid(std::f32::consts::TAU);
+    assert!(
+        away_from_center < 0.01 || (std::f32::consts::TAU - away_from_center) < 0.01,
+        "spawn yaw {yaw} must face outward from the hex center toward a shelf wall, mismatch was {away_from_center}"
+    );
+}

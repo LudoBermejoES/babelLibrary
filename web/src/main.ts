@@ -86,7 +86,13 @@ export async function boot(): Promise<void> {
   const streamer = new GalleryStreamer(scene, graph, getGallery);
   streamer.update(graph.spawn.gallery);
 
-  camera.position.set(graph.spawn.position[0], graph.spawn.position[1], graph.spawn.position[2]);
+  const [spawnX, spawnY, spawnZ] = graph.spawn.position;
+  camera.position.set(spawnX, spawnY, spawnZ);
+  // spawn.yaw is a world-space direction angle matching the generator's
+  // wall_normal convention: (cos(yaw), sin(yaw)) = (x, z). Look at a point
+  // along that direction rather than juggling Euler/rotation.y sign
+  // conventions directly.
+  camera.lookAt(spawnX + Math.cos(graph.spawn.yaw), spawnY, spawnZ + Math.sin(graph.spawn.yaw));
 
   const fpsTracker = new FpsTracker();
   installDebugHook(seed, graph, scene, streamer, renderer, fpsTracker);

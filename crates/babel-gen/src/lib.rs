@@ -179,14 +179,14 @@ impl GraphJson {
             })
             .collect();
 
-        let spawn_center = emit::hex_center(&layout.galleries[layout.spawn_gallery]);
+        let (sx, sy, sz, yaw) = emit::spawn_pose(&layout.galleries[layout.spawn_gallery]);
         GraphJson {
             config: ConfigJson::default(),
             galleries,
             spawn: SpawnJson {
                 gallery: layout.spawn_gallery,
-                position: [spawn_center.0, spawn_center.1 + 1.70, spawn_center.2],
-                yaw: 0.0,
+                position: [sx, sy + 1.70, sz],
+                yaw,
             },
         }
     }

@@ -17,6 +17,25 @@ pub fn hex_center(gallery: &Gallery) -> (f32, f32, f32) {
     (x, y, z)
 }
 
+/// World-space `(x, y, z, yaw)` for standing in this gallery: partway
+/// between the central shaft and a shelf wall (clear of the shaft's
+/// collider radius), facing outward toward that wall. Used for the
+/// player's spawn pose so arrival shows shelves, not the shaft void —
+/// `hex_center` alone sits exactly inside the shaft opening.
+pub fn spawn_pose(gallery: &Gallery) -> (f32, f32, f32, f32) {
+    let (cx, cy, cz) = hex_center(gallery);
+    let wall_index = shelf_wall_indices(gallery)[0];
+    let (nx, nz) = wall_normal(wall_index);
+    let apothem = hex_apothem();
+    let stand_distance = (config::SHAFT_RADIUS_M + apothem) / 2.0;
+
+    let x = cx + nx * stand_distance;
+    let z = cz + nz * stand_distance;
+    let yaw = wall_yaw(wall_index);
+
+    (x, cy, z, yaw)
+}
+
 /// The 6 wall-midpoint directions of a flat-top hexagon, in a fixed order
 /// matching `HEX_DIRECTIONS` in `graph.rs` conceptually (wall `i` faces
 /// direction `i`). Angle 0 points toward `+x`.
