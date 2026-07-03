@@ -1,16 +1,58 @@
 import './style.css';
-import { createRenderer } from './scene/renderer';
+import { createRenderer, isWebGL2Available } from './scene/renderer';
+import { buildGalleryArchitecture } from './scene/gallery';
+import { fetchBooks } from './api/books';
+import { createLibrary } from './wasm';
+import { installDebugHook } from './debug';
 
 export function placeholderReady(): boolean {
   return true;
 }
 
-export function boot(): void {
+/** Default seed (doc 01/02): `?seed=<u64>` overrides it. */
+const DEFAULT_SEED = 0xbabe1n;
+
+function seedFromUrl(): bigint {
+  const raw = new URLSearchParams(window.location.search).get('seed');
+  if (raw === null) return DEFAULT_SEED;
+  try {
+    return BigInt(raw);
+  } catch {
+    return DEFAULT_SEED;
+  }
+}
+
+function showWebglUnavailable(app: HTMLDivElement): void {
+  const panel = document.createElement('div');
+  panel.dataset.testid = 'webgl-error';
+  panel.className = 'webgl-error';
+  panel.textContent =
+    'babelLibrary needs WebGL2, which this browser cannot provide right now. Try a recent version of Chrome, Firefox, or Safari, and make sure hardware acceleration is enabled.';
+  app.appendChild(panel);
+}
+
+export async function boot(): Promise<void> {
   const app = document.querySelector<HTMLDivElement>('#app');
   if (!app) throw new Error('#app container missing');
 
+  if (!isWebGL2Available()) {
+    showWebglUnavailable(app);
+    return;
+  }
+
   const { renderer, scene, camera } = createRenderer(app);
   camera.position.set(0, 1.7, 3);
+
+  const seed = seedFromUrl();
+  const books = await fetchBooks();
+  const { graph, getGallery } = await createLibrary(seed, books);
+
+  for (const gallery of graph.galleries) {
+    scene.add(buildGalleryArchitecture(gallery, getGallery(gallery.index), graph.config));
+  }
+  camera.position.set(graph.spawn.position[0], graph.spawn.position[1], graph.spawn.position[2]);
+
+  installDebugHook(seed, graph, scene);
 
   renderer.setAnimationLoop(() => {
     renderer.render(scene, camera);

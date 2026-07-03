@@ -6,6 +6,21 @@ export interface AppRenderer {
   camera: THREE.PerspectiveCamera;
 }
 
+/** True if the browser can create a WebGL2 context (spec: graceful degradation). */
+export function isWebGL2Available(): boolean {
+  try {
+    const canvas = document.createElement('canvas');
+    return !!canvas.getContext('webgl2');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Creates the renderer/scene/camera. Throws if WebGL2 is unavailable —
+ * callers must check `isWebGL2Available()` first (see `boot()` in main.ts)
+ * so the failure path never reaches an uncaught exception or blank canvas.
+ */
 export function createRenderer(container: HTMLElement): AppRenderer {
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -13,6 +28,11 @@ export function createRenderer(container: HTMLElement): AppRenderer {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(container.clientWidth, container.clientHeight);
   container.appendChild(renderer.domElement);
+
+  renderer.domElement.addEventListener('webglcontextlost', (event) => {
+    event.preventDefault();
+    window.location.reload();
+  });
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(

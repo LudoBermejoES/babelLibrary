@@ -1,3 +1,5 @@
 import { boot } from './main';
 
-boot();
+boot().catch((err) => {
+  console.error('boot failed', err);
+});
