@@ -137,4 +137,28 @@ describe('GalleryStreamer', () => {
     expect(scene.getObjectByName(`shaft-glimpse-${withVertical.index}`)).toBeDefined();
     expect(scene.getObjectByName(`gallery-${withVertical.index}`)).toBeUndefined();
   });
+
+  it('collidersFor combines colliders and shaft_colliders for a fully-built gallery, and is undefined otherwise', async () => {
+    const books = fakeBooks(2500);
+    const { graph, getGallery } = await createLibrary(11n, books);
+    const withVertical = graph.galleries.find((g) => g.floorAbove !== null || g.floorBelow !== null)!;
+    const verticalNeighborIndex = (withVertical.floorAbove ?? withVertical.floorBelow)!;
+
+    const scene = new THREE.Scene();
+    const streamer = new GalleryStreamer(scene, graph, getGallery);
+    streamer.update(withVertical.index);
+
+    const buffers = getGallery(withVertical.index);
+    const combined = streamer.collidersFor(withVertical.index);
+    expect(combined).toBeDefined();
+    expect(combined!.length).toBe(buffers.colliders.length + buffers.shaftColliders.length);
+    expect(Array.from(combined!.subarray(0, buffers.colliders.length))).toEqual(Array.from(buffers.colliders));
+
+    // The glimpse-tier vertical neighbor has no buffers loaded, so no colliders.
+    expect(streamer.collidersFor(verticalNeighborIndex)).toBeUndefined();
+    // A gallery outside the current needed set entirely has no live buffers either.
+    const neverVisited = graph.galleries.find((g) => !streamer.liveGalleryIndices.has(g.index))!;
+    expect(neverVisited).toBeDefined();
+    expect(streamer.collidersFor(neverVisited.index)).toBeUndefined();
+  });
 });

@@ -1,5 +1,6 @@
 import type * as THREE from 'three';
 import type { LibraryGraph } from './wasm';
+import type { PlayerController } from './controls/player';
 import type { FpsTracker } from './scene/perf-stats';
 import type { GalleryStreamer, StreamedGalleryCounts } from './scene/streaming';
 import type { VestibuleCounts } from './scene/vestibule';
@@ -26,6 +27,9 @@ export interface BabelDebugHook {
   /** Doc 09 §5 perf gate: resets the rolling FPS-minimum window. Call before starting a scripted walk. */
   resetStats(): void;
   stats: PerfStats;
+  /** Moves the camera to a world position and re-runs gallery-tracking from it — doc 06 "Gallery tracking" wiring, exercised directly since it's normally driven by real WASD movement (blocked by headless Pointer Lock, see doc 09 §6). */
+  teleportAndTrack(x: number, y: number, z: number): { galleryIndex: number; floor: number };
+  galleryCenter(index: number): [number, number, number] | null;
 }
 
 declare global {
@@ -46,6 +50,7 @@ export function installDebugHook(
   renderer: THREE.WebGLRenderer,
   fpsTracker: FpsTracker,
   camera: THREE.PerspectiveCamera,
+  player: PlayerController,
 ): void {
   if (!isE2eMode()) return;
 
@@ -130,6 +135,15 @@ export function installDebugHook(
     },
     shaftGlimpseExists(galleryIndex: number): boolean {
       return scene.getObjectByName(`shaft-glimpse-${galleryIndex}`) !== undefined;
+    },
+    teleportAndTrack(x: number, y: number, z: number): { galleryIndex: number; floor: number } {
+      camera.position.set(x, y, z);
+      player.retrackFromCameraPosition();
+      const tracked = player.trackedGallery;
+      return { galleryIndex: tracked.index, floor: tracked.floor };
+    },
+    galleryCenter(index: number): [number, number, number] | null {
+      return graph.galleries[index]?.center ?? null;
     },
   };
 }

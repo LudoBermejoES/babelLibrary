@@ -85,6 +85,7 @@ Playwright `perf_walk` (tagged `@perf`, run on demand, not per-commit): 3,000-bo
 
 ## 6. Manual QA checklist (release)
 
+- Pointer lock: click the enter overlay → cursor disappears, mouse moves the camera; `Esc` → cursor returns, pause overlay shows; click the pause overlay → re-engages, walking resumes. Headless Chromium cannot grant real Pointer Lock (the API request silently never resolves), so this is manual-only — verified once by hand for task 5.5, not automated. `e2e/pointer-lock.spec.ts` covers what IS testable headless: the overlay renders and the click handler calls `requestPointerLock()`.
 - Feel: walk speed, mouse sensitivity, no vestibule-opening snags in 5 minutes of wandering (all 6 hex wall orientations); staircase climbing/descending feels natural, not disorienting.
 - Visual: no z-fighting, no light pops on gallery swap, fog looks right through vestibule openings and the shaft; the mirror reads as a mirror, not a flat gray plane.
 - Reader: a long real EPUB (Moby-Dick) — TOC, 20+ page turns, resize mid-read, reopen.

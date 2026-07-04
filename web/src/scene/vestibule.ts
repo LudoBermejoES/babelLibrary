@@ -3,7 +3,7 @@ import type { GalleryBuffers } from '../wasm';
 import { createAsset } from './assets';
 
 /** Parsed `vestibule` buffer (doc 04): `[hasStairUp, hasStairDown, hasHorizontalNeighbor, mirrorTransform(16), closetLeftPos(3), closetRightPos(3)]`. */
-interface VestibuleRecord {
+export interface VestibuleRecord {
   hasStairUp: boolean;
   hasStairDown: boolean;
   hasHorizontalNeighbor: boolean;
@@ -12,7 +12,7 @@ interface VestibuleRecord {
   closetRightPos: [number, number, number];
 }
 
-function parseVestibule(buffer: Float32Array): VestibuleRecord {
+export function parseVestibule(buffer: Float32Array): VestibuleRecord {
   return {
     hasStairUp: buffer[0] === 1,
     hasStairDown: buffer[1] === 1,
@@ -57,17 +57,21 @@ export function buildVestibule(buffers: GalleryBuffers): { group: THREE.Group; c
   let staircases = 0;
   if (record.hasStairUp || record.hasStairDown) {
     const staircase = createAsset('staircase');
-    const midpoint: [number, number, number] = [
-      (record.closetLeftPos[0] + record.closetRightPos[0]) / 2,
-      (record.closetLeftPos[1] + record.closetRightPos[1]) / 2,
-      (record.closetLeftPos[2] + record.closetRightPos[2]) / 2,
-    ];
-    staircase.position.set(...midpoint);
+    staircase.position.set(...staircaseCenter(record));
     group.add(staircase);
     staircases = 1;
   }
 
   return { group, counts: { mirrors: 1, closets: 2, staircases } };
+}
+
+/** World-space (x, y, z) of the staircase's helix axis — the midpoint between the two closets, matching the staircase mesh's own position so visuals and collision/movement geometry never drift apart. */
+export function staircaseCenter(record: VestibuleRecord): [number, number, number] {
+  return [
+    (record.closetLeftPos[0] + record.closetRightPos[0]) / 2,
+    (record.closetLeftPos[1] + record.closetRightPos[1]) / 2,
+    (record.closetLeftPos[2] + record.closetRightPos[2]) / 2,
+  ];
 }
 
 /** Shaft railing ring from `shaft_colliders` (6 f32 AABBs per box, doc 04) — visual boxes matching the collision geometry 1:1. */

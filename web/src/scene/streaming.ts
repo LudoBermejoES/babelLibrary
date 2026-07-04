@@ -93,6 +93,21 @@ export class GalleryStreamer {
     return this.instanceCounts.get(index);
   }
 
+  /** The raw `vestibule` buffer (doc 04, 25 f32) for a fully-built gallery — lets the controls layer derive the staircase helix from the same data the vestibule mesh uses, without recomputing it. `undefined` for a glimpse-tier or not-live gallery. */
+  vestibuleBufferFor(index: number): Float32Array | undefined {
+    return this.liveBuffers.get(index)?.vestibule;
+  }
+
+  /** Flat `[minX,minY,minZ,maxX,maxY,maxZ]` AABBs for a fully-built gallery's walls/shelves/tables (`colliders`) plus the shaft railing (`shaft_colliders`), doc 06 "Collision: capsule vs static AABBs." `undefined` for a glimpse-tier or not-live gallery — there is nothing to collide with in an unbuilt gallery. */
+  collidersFor(index: number): Float32Array | undefined {
+    const buffers = this.liveBuffers.get(index);
+    if (!buffers) return undefined;
+    const combined = new Float32Array(buffers.colliders.length + buffers.shaftColliders.length);
+    combined.set(buffers.colliders, 0);
+    combined.set(buffers.shaftColliders, buffers.colliders.length);
+    return combined;
+  }
+
   vestibuleCountsFor(index: number): VestibuleCounts | undefined {
     return this.vestibuleCounts.get(index);
   }

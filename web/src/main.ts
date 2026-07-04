@@ -1,8 +1,11 @@
+import * as THREE from 'three';
 import './style.css';
 import { createRenderer, isWebGL2Available } from './scene/renderer';
 import { createAmbientLight, createFog } from './scene/lighting';
 import { FpsTracker } from './scene/perf-stats';
 import { GalleryStreamer } from './scene/streaming';
+import { PlayerController } from './controls/player';
+import { Overlay } from './ui/overlay';
 import { fetchBooks } from './api/books';
 import type { BookMeta } from './api/types';
 import { createLibrary } from './wasm';
@@ -94,11 +97,22 @@ export async function boot(): Promise<void> {
   // conventions directly.
   camera.lookAt(spawnX + Math.cos(graph.spawn.yaw), spawnY, spawnZ + Math.sin(graph.spawn.yaw));
 
-  const fpsTracker = new FpsTracker();
-  installDebugHook(seed, graph, scene, streamer, renderer, fpsTracker, camera);
+  const player = new PlayerController(camera, renderer.domElement, app, graph, streamer);
+  const overlay = new Overlay(app);
+  player.inputMode.onModeChange((mode) => {
+    if (mode === 'WALKING') overlay.hide();
+    else if (mode === 'ENTER_OVERLAY') overlay.showEnter();
+    else if (mode === 'PAUSE_OVERLAY') overlay.showPause();
+  });
 
+  const fpsTracker = new FpsTracker();
+  installDebugHook(seed, graph, scene, streamer, renderer, fpsTracker, camera, player);
+
+  const timer = new THREE.Timer();
   renderer.setAnimationLoop((now) => {
     fpsTracker.recordFrame(now);
+    timer.update(now);
+    player.update(timer.getDelta());
     renderer.render(scene, camera);
   });
 }
