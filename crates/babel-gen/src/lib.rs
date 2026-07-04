@@ -108,6 +108,7 @@ struct ConfigJson {
     hex_side: f32,
     ceiling_height: f32,
     shaft_radius: f32,
+    staircase_radius: f32,
     railing_height: f32,
     books_per_hex: usize,
     slots_per_shelf: usize,
@@ -122,6 +123,7 @@ impl Default for ConfigJson {
             hex_side: gen::config::HEX_SIDE_M,
             ceiling_height: gen::config::CEILING_HEIGHT_M,
             shaft_radius: gen::config::SHAFT_RADIUS_M,
+            staircase_radius: gen::config::STAIRCASE_RADIUS_M,
             railing_height: gen::config::RAILING_HEIGHT_M,
             books_per_hex: gen::config::BOOKS_PER_HEX,
             slots_per_shelf: gen::config::SLOTS_PER_SHELF,
@@ -179,13 +181,16 @@ impl GraphJson {
             })
             .collect();
 
+        // Spawn is emitted at FLOOR level; the frontend adds eye height when
+        // posing the camera (eye height is a player-feel value it owns —
+        // web/src/controls/constants.ts EYE_HEIGHT — not world data).
         let (sx, sy, sz, yaw) = emit::spawn_pose(&layout.galleries[layout.spawn_gallery]);
         GraphJson {
             config: ConfigJson::default(),
             galleries,
             spawn: SpawnJson {
                 gallery: layout.spawn_gallery,
-                position: [sx, sy + 1.70, sz],
+                position: [sx, sy, sz],
                 yaw,
             },
         }

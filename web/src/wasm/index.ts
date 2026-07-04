@@ -29,6 +29,7 @@ export interface LibraryConfig {
   hexSide: number;
   ceilingHeight: number;
   shaftRadius: number;
+  staircaseRadius: number;
   railingHeight: number;
   booksPerHex: number;
   slotsPerShelf: number;
@@ -68,6 +69,7 @@ interface RawGraphJson {
     hex_side: number;
     ceiling_height: number;
     shaft_radius: number;
+    staircase_radius: number;
     railing_height: number;
     books_per_hex: number;
     slots_per_shelf: number;
@@ -99,6 +101,7 @@ function parseGraph(json: string): LibraryGraph {
       hexSide: raw.config.hex_side,
       ceilingHeight: raw.config.ceiling_height,
       shaftRadius: raw.config.shaft_radius,
+      staircaseRadius: raw.config.staircase_radius,
       railingHeight: raw.config.railing_height,
       booksPerHex: raw.config.books_per_hex,
       slotsPerShelf: raw.config.slots_per_shelf,

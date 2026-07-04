@@ -27,6 +27,11 @@ pub const CEILING_HEIGHT_M: f32 = 3.2;
 /// Central shaft radius, meters.
 pub const SHAFT_RADIUS_M: f32 = 1.0;
 
+/// Spiral-staircase helix radius, meters — the walkable footprint inside the
+/// vestibule. A distinct object from the central shaft; sized to roughly the
+/// vestibule opening so the whole doorway path counts as "on the stairs".
+pub const STAIRCASE_RADIUS_M: f32 = 1.2;
+
 /// Central shaft railing height, meters.
 pub const RAILING_HEIGHT_M: f32 = 0.9;
 
@@ -78,6 +83,14 @@ mod tests {
         assert_eq!(LAMPS_PER_HEX, 2);
         assert_eq!(SHELVES_PER_HEX, 20);
         assert_eq!(BOOKS_PER_HEX, 160);
+    }
+
+    #[test]
+    fn staircase_radius_is_its_own_constant() {
+        // The staircase helix is a distinct object from the central shaft;
+        // it must not silently track SHAFT_RADIUS_M (the frontend borrowed
+        // the shaft radius before this constant existed).
+        assert_eq!(STAIRCASE_RADIUS_M, 1.2);
     }
 
     #[test]

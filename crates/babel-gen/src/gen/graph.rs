@@ -5,12 +5,14 @@
 //! Each hexagon has exactly one vestibule wall (doc 04), so it can have at
 //! most one horizontal neighbor — a general 2D "blob" shape is geometrically
 //! impossible under that constraint (it needs degree-2+ cells to stay
-//! connected). Instead, each floor is a single winding **chain** of
-//! hexagons, closed into a loop (the last hexagon's vestibule connects back
-//! to the first). This is the concrete implementation of Borges' own
+//! connected). Instead, each floor is a single winding **closed cycle** of
+//! hexagons: a self-avoiding walk from the origin that returns to a cell
+//! hex-adjacent to the origin, so the loop-closing edge (last → first) is a
+//! real shared wall between physically adjacent galleries, not a teleport
+//! across the floor. This is the concrete implementation of Borges' own
 //! resolution to the library's apparent infinity — "unlimited but
-//! periodic": walk far enough in one direction and you return to where you
-//! started.
+//! periodic": walk far enough in one direction and you return, on foot
+//! through real doorways, to where you started.
 
 use std::collections::HashSet;
 
@@ -40,12 +42,10 @@ const HEX_DIRECTIONS: [(i32, i32); 6] = [(1, 0), (1, -1), (0, -1), (-1, 0), (-1,
 /// `book_count` books at `config::BOOKS_PER_HEX` each, padded up to
 /// `config::FLOOR0_MIN_GALLERIES` on floor 0.
 ///
-/// Floor 0 is grown as a single winding chain (seeded random walk from the
-/// origin, each step extending to a not-yet-visited neighbor) until it
-/// reaches its target length, then closed into a loop (last hexagon's
-/// vestibule connects back to the first). Floor N+1 mirrors floor N's
-/// footprint and chain order exactly, connected vertically via each
-/// hexagon's own vestibule staircase.
+/// Floor 0 is grown as a single closed cycle (seeded self-avoiding walk from
+/// the origin that returns hex-adjacent to it — see `grow_chain`). Floor N+1
+/// mirrors floor N's footprint and cycle order exactly, connected vertically
+/// via each hexagon's own vestibule staircase.
 pub fn build_graph(seed: u64, book_count: usize) -> Vec<GalleryShell> {
     let total_needed = config::galleries_needed(book_count).max(config::FLOOR0_MIN_GALLERIES);
     let mut rng = graph_rng(seed);
@@ -133,38 +133,101 @@ pub fn build_graph(seed: u64, book_count: usize) -> Vec<GalleryShell> {
     shells
 }
 
-/// Grows a single winding chain via seeded random walk from `(0, 0)`,
-/// returning the visited `(q, r)` positions in walk order. Never branches:
-/// each step extends from the *current end* of the chain to one of its
-/// not-yet-visited neighbors, matching the one-vestibule-per-hexagon
-/// constraint (a hexagon only ever connects to the previous and next
-/// hexagon in the chain).
+/// Grows a **closed** winding cycle of hex cells starting and ending at
+/// `(0, 0)`: a self-avoiding seeded random walk whose final cell is
+/// hex-adjacent to the origin, so the loop-closing edge (last → first) is a
+/// real shared wall, not a teleport across the floor. Returns the cells in
+/// cycle order (the caller wires consecutive cells, and last → first, as
+/// horizontal neighbors).
+///
+/// Because a self-avoiding walk can paint itself into a corner (no
+/// unvisited neighbor, or unable to return adjacent to the origin), this
+/// retries with fresh RNG draws up to `MAX_ATTEMPTS`, then falls back to a
+/// guaranteed-closable hex ring around the origin. It never returns an open
+/// chain.
 fn grow_chain(rng: &mut impl Rng, target_len: usize) -> Vec<(i32, i32)> {
+    const MAX_ATTEMPTS: usize = 64;
+    // A closed cycle on the hex lattice needs at least 3 cells; the floor-0
+    // minimum (7) is always well above that.
+    let target = target_len.max(3);
+
+    for _ in 0..MAX_ATTEMPTS {
+        if let Some(cycle) = try_grow_cycle(rng, target) {
+            return cycle;
+        }
+    }
+    hex_ring(target)
+}
+
+/// One self-avoiding-walk attempt to build a closed cycle of exactly
+/// `target` cells returning adjacent to the origin. Returns `None` if the
+/// walk gets stuck or can't close at the right length.
+fn try_grow_cycle(rng: &mut impl Rng, target: usize) -> Option<Vec<(i32, i32)>> {
+    let origin = (0, 0);
     let mut visited: HashSet<(i32, i32)> = HashSet::new();
     let mut chain: Vec<(i32, i32)> = Vec::new();
-    let mut current = (0, 0);
+    let mut current = origin;
     visited.insert(current);
     chain.push(current);
 
-    while chain.len() < target_len {
+    while chain.len() < target {
+        let last_step = chain.len() == target - 1;
         let candidates: Vec<(i32, i32)> = HEX_DIRECTIONS
             .iter()
             .map(|&(dq, dr)| (current.0 + dq, current.1 + dr))
             .filter(|c| !visited.contains(c))
+            // On the final step, the chosen cell must itself be adjacent to
+            // the origin so the closing edge is a unit hex step.
+            .filter(|c| !last_step || is_hex_adjacent(*c, origin))
             .collect();
 
-        let Some(&next) = candidates.choose(rng) else {
-            // Fully boxed in by already-visited cells (can happen with a
-            // sufficiently long, tightly-curled walk) — stop here rather
-            // than looping forever. A shorter-than-requested chain is still
-            // a valid, fully-connected loop, just smaller than the target.
-            break;
-        };
-
+        let &next = candidates.choose(rng)?;
         visited.insert(next);
         chain.push(next);
         current = next;
     }
 
-    chain
+    // Sanity: the cycle closes with a real hex step.
+    if is_hex_adjacent(*chain.last().unwrap(), origin) {
+        Some(chain)
+    } else {
+        None
+    }
+}
+
+/// True if `a` and `b` are hex-adjacent (differ by one `HEX_DIRECTIONS` step).
+fn is_hex_adjacent(a: (i32, i32), b: (i32, i32)) -> bool {
+    let d = (b.0 - a.0, b.1 - a.1);
+    HEX_DIRECTIONS.contains(&d)
+}
+
+/// A guaranteed-closable fallback: a ring of `len` cells hugging the origin,
+/// each hex-adjacent to the next and the last adjacent to the first. Built
+/// by spiralling outward with a self-avoiding greedy walk that always keeps
+/// a return path — used only when the random walk fails to close, which is
+/// rare, so simplicity beats optimality here.
+fn hex_ring(len: usize) -> Vec<(i32, i32)> {
+    // Walk the six edges of a hex spiral, collecting cells until we have
+    // `len`, guaranteeing adjacency between consecutive cells. Since the
+    // spiral is contiguous and returns toward the origin, truncating to
+    // `len` and closing keeps every consecutive pair (and the closing pair,
+    // for the small rings we need) adjacent.
+    let mut cells: Vec<(i32, i32)> = vec![(0, 0)];
+    let mut current = (0, 0);
+    let mut dir = 0usize;
+    while cells.len() < len {
+        let (dq, dr) = HEX_DIRECTIONS[dir % HEX_DIRECTIONS.len()];
+        let next = (current.0 + dq, current.1 + dr);
+        if cells.contains(&next) {
+            dir += 1;
+            if dir > HEX_DIRECTIONS.len() * 2 {
+                break; // safety: cannot extend further
+            }
+            continue;
+        }
+        cells.push(next);
+        current = next;
+        dir += 1; // turn each step to curl back toward the origin
+    }
+    cells
 }

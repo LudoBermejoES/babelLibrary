@@ -39,6 +39,14 @@ describe('createLibrary (wasm facade)', () => {
     expect(graph.galleries.length).toBeGreaterThan(0);
     expect(graph.config.booksPerHex).toBe(160);
     expect(graph.config.shelfWallsPerHex).toBe(4);
+    expect(graph.config.staircaseRadius).toBe(1.2); // distinct from shaftRadius (1.0)
+    expect(graph.config.shaftRadius).toBe(1.0);
+
+    // Spawn is emitted at FLOOR level (feet on the floor), not eye height —
+    // eye height is a player-feel value owned by the frontend (constants.ts
+    // EYE_HEIGHT), added when posing the camera, not baked into world data.
+    const spawnGallery = graph.galleries[graph.spawn.gallery]!;
+    expect(graph.spawn.position[1]).toBeCloseTo(spawnGallery.floor * graph.config.ceilingHeight);
 
     const gallery0 = getGallery(0);
     expect(gallery0.bookTransforms.length % 16).toBe(0);

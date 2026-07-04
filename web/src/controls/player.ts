@@ -177,18 +177,22 @@ export class PlayerController {
     this.activeColliders = this.streamer.activeColliders(index);
   }
 
-  /** Standing pose (feet-on-floor + eye height, facing spawn yaw) for a gallery — every hexagon shares the same fixed shape, so the spawn offset is valid for any gallery. */
+  /**
+   * Eye-height standing pose for a gallery, facing the spawn yaw. Every
+   * hexagon shares the same fixed shape, so the spawn's horizontal offset
+   * from its own gallery center applies to any gallery. The generator emits
+   * spawn at FLOOR level, so `EYE_HEIGHT` is added here (the frontend owns
+   * eye height). The single "put the camera in a gallery" helper — used by
+   * both boot and the `?e2e` teleport hook.
+   */
   standingPoseFor(index: number): { position: [number, number, number]; yaw: number } | null {
     const gallery = this.graph.galleries[index];
     if (!gallery) return null;
     const spawnCenter = this.graph.galleries[this.graph.spawn.gallery]!.center;
-    const offset: [number, number, number] = [
-      this.graph.spawn.position[0] - spawnCenter[0],
-      this.graph.spawn.position[1] - spawnCenter[1],
-      this.graph.spawn.position[2] - spawnCenter[2],
-    ];
+    const offsetX = this.graph.spawn.position[0] - spawnCenter[0];
+    const offsetZ = this.graph.spawn.position[2] - spawnCenter[2];
     return {
-      position: [gallery.center[0] + offset[0], gallery.center[1] + offset[1], gallery.center[2] + offset[2]],
+      position: [gallery.center[0] + offsetX, gallery.center[1] + EYE_HEIGHT, gallery.center[2] + offsetZ],
       yaw: this.graph.spawn.yaw,
     };
   }
@@ -232,9 +236,7 @@ export class PlayerController {
     const { bottomY, topY } = helixBand(cy, EYE_HEIGHT, ceilingHeight, record.hasStairUp, record.hasStairDown);
     return {
       center: [cx, cz],
-      // TODO(group 2): use a dedicated STAIRCASE_RADIUS_M config field rather
-      // than borrowing the shaft radius (see fix-rendering-and-infinite-periodicity 2.1).
-      radius: this.graph.config.shaftRadius,
+      radius: this.graph.config.staircaseRadius,
       risePerTurn: ceilingHeight,
       bottomY,
       topY,

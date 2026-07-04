@@ -23,9 +23,9 @@ at each commit.
 
 ## 2. Generator redesign — closed cycles, edge direction, spawn at floor level
 
-- [ ] 2.1 Add `STAIRCASE_RADIUS_M` to `gen/config.rs`; emit it in the graph-JSON config block; `stairs`/`helixFor` read it instead of borrowing `shaftRadius`. (RED: a config test + a facade test that the field is present.)
-- [ ] 2.2 Spawn at floor level: RED update to the Rust spawn test (spawn `y` == floor height, no `+1.70`); remove the eye offset from `lib.rs`; frontend adds `EYE_HEIGHT` when posing the camera.
-- [ ] 2.3 Closed-cycle floor growth: RED `cargo test` (last cell hex-adjacent to first; every step is a unit hex direction) + proptest over seeds (always closes, with retry/fallback). Rewrite `grow_chain` in `graph.rs` as a seeded closed hex cycle.
+- [x] 2.1 Add `STAIRCASE_RADIUS_M` to `gen/config.rs`; emit it in the graph-JSON config block; `stairs`/`helixFor` read it instead of borrowing `shaftRadius`. (RED: a config test + a facade test that the field is present.)
+- [x] 2.2 Spawn at floor level: RED update to the Rust spawn test (spawn `y` == floor height, no `+1.70`); remove the eye offset from `lib.rs`; frontend adds `EYE_HEIGHT` when posing the camera.
+- [x] 2.3 Closed-cycle floor growth: RED `cargo test` (last cell hex-adjacent to first; every step is a unit hex direction) + proptest over seeds (always closes, with retry/fallback). Rewrite `grow_chain` in `graph.rs` as a seeded closed hex cycle.
 - [ ] 2.4 Edge direction on the graph: RED tests — each `GalleryShell`/`Gallery` records the `HEX_DIRECTIONS` index of its horizontal edge; the reverse cell stores the opposite; graph JSON exposes it. Thread through `graph.rs` → `furnish.rs` → `emit.rs` and `lib.rs`'s `GraphJson`.
 - [ ] 2.5 Direction-aware vestibule wall + buffer-contract bump: RED buffer tests — the vestibule opening is on the wall for the edge direction; two neighbors' openings face each other. Update `emit::vestibule`/`wall_segments`/`spawn_pose` to stop hardcoding wall 0/3; bump the doc-04 buffer layout; update the wasm facade + all TS consumers (`gallery.ts`, `vestibule.ts`, `debug.ts`) in the same commit; rebuild wasm.
 - [ ] 2.6 Commit group 2 (`feat:` → minor bump; it's a buffer-contract change), tag, push, verify CI green.

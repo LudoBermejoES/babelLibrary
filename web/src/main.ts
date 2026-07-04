@@ -89,7 +89,6 @@ export async function boot(): Promise<void> {
   }
 
   const { renderer, scene, camera } = createRenderer(app);
-  camera.position.set(0, 1.7, 3);
   if (!isE2eMode() || !new URLSearchParams(window.location.search).has('noLighting')) {
     scene.add(createAmbientLight());
     scene.fog = createFog();
@@ -102,15 +101,18 @@ export async function boot(): Promise<void> {
   const streamer = new GalleryStreamer(scene, graph, getGallery);
   streamer.update(graph.spawn.gallery);
 
-  const [spawnX, spawnY, spawnZ] = graph.spawn.position;
-  camera.position.set(spawnX, spawnY, spawnZ);
-  // spawn.yaw is a world-space direction angle matching the generator's
-  // wall_normal convention: (cos(yaw), sin(yaw)) = (x, z). Look at a point
-  // along that direction rather than juggling Euler/rotation.y sign
-  // conventions directly.
-  camera.lookAt(spawnX + Math.cos(graph.spawn.yaw), spawnY, spawnZ + Math.sin(graph.spawn.yaw));
-
   const player = new PlayerController(camera, renderer.domElement, app, graph, streamer);
+
+  // Pose the camera at the spawn gallery via the player's single standing-pose
+  // helper (adds EYE_HEIGHT to the floor-level spawn; faces spawn.yaw, whose
+  // (cos,sin)=(x,z) convention matches the generator's wall_normal).
+  const spawnPose = player.standingPoseFor(graph.spawn.gallery)!;
+  camera.position.set(...spawnPose.position);
+  camera.lookAt(
+    camera.position.x + Math.cos(spawnPose.yaw),
+    camera.position.y,
+    camera.position.z + Math.sin(spawnPose.yaw),
+  );
   const overlay = new Overlay(app);
   player.inputMode.onModeChange((mode) => {
     if (mode === 'WALKING') overlay.hide();
