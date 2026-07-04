@@ -3,5 +3,5 @@ resolver = "2"
 members = ["crates/babel-gen", "server"]
 
 [workspace.package]
-version = "0.11.2"
+version = "0.12.0"
 edition = "2021"
