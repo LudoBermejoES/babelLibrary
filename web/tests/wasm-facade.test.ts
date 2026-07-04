@@ -71,7 +71,7 @@ describe('createLibrary (wasm facade)', () => {
   });
 
   it('graph includes (q, r, floor) and neighbor refs for every gallery', async () => {
-    const books = fakeBooks(2500); // force multiple floors
+    const books = fakeBooks(3500); // force multiple floors
     const { graph } = await createLibrary(11n, books);
 
     const hasFloorAbove = graph.galleries.some((g) => g.floorAbove !== null);

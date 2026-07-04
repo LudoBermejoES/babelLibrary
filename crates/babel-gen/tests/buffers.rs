@@ -233,3 +233,50 @@ fn spawn_pose_stands_clear_of_the_shaft_and_faces_a_shelf_wall() {
         "spawn yaw {yaw} must face outward from the hex center toward a shelf wall, mismatch was {away_from_center}"
     );
 }
+
+#[test]
+fn vestibule_opening_faces_the_real_neighbor() {
+    // The vestibule opening (wall_segments kind 1) must sit on the wall whose
+    // outward normal points at the horizontal neighbor's center — not a
+    // hardcoded wall index. Two connected galleries' openings face each other.
+    let books = fake_books(50);
+    let layout = generate(9, &books);
+
+    for gallery in &layout.galleries {
+        let Some(neighbor_idx) = gallery.horizontal_neighbor else {
+            continue;
+        };
+        let neighbor = &layout.galleries[neighbor_idx];
+        let (cx, _cy, cz) = emit::hex_center(gallery);
+        let (nx, _ny, nz) = emit::hex_center(neighbor);
+        let to_neighbor = (nx - cx, nz - cz);
+
+        // Find the vestibule opening record and its wall midpoint direction.
+        let walls = emit::wall_segments(gallery);
+        let mut found_opening = false;
+        for record in walls.chunks_exact(8) {
+            if record[5] != 1.0 {
+                continue; // not the vestibule opening
+            }
+            found_opening = true;
+            let mid = (
+                (record[0] + record[2]) / 2.0 - cx,
+                (record[1] + record[3]) / 2.0 - cz,
+            );
+            // The opening's midpoint direction from center must align with
+            // the direction to the neighbor (dot product strongly positive).
+            let dot = mid.0 * to_neighbor.0 + mid.1 * to_neighbor.1;
+            let mid_len = (mid.0 * mid.0 + mid.1 * mid.1).sqrt();
+            let nbr_len = (to_neighbor.0 * to_neighbor.0 + to_neighbor.1 * to_neighbor.1).sqrt();
+            let cos = dot / (mid_len * nbr_len);
+            assert!(
+                cos > 0.99,
+                "vestibule opening must face the neighbor: cos(angle) = {cos} (opening dir {mid:?}, to neighbor {to_neighbor:?})"
+            );
+        }
+        assert!(
+            found_opening,
+            "every gallery with a neighbor must emit a vestibule opening"
+        );
+    }
+}

@@ -10,6 +10,7 @@ function gallery(overrides: Partial<LibraryGallery>): LibraryGallery {
     floor: 0,
     center: [0, 0, 0],
     horizontalNeighbor: null,
+    vestibuleDirection: 0,
     floorAbove: null,
     floorBelow: null,
     ...overrides,

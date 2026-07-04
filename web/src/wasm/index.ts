@@ -45,6 +45,8 @@ export interface LibraryGallery {
   floor: number;
   center: [number, number, number];
   horizontalNeighbor: number | null;
+  /** HEX_DIRECTIONS index (0..6) of the wall facing the horizontal neighbor — the vestibule/doorway wall. */
+  vestibuleDirection: number;
   floorAbove: number | null;
   floorBelow: number | null;
 }
@@ -84,6 +86,7 @@ interface RawGraphJson {
     floor: number;
     center: [number, number, number];
     horizontal_neighbor: number | null;
+    vestibule_direction: number;
     floor_above: number | null;
     floor_below: number | null;
   }>;
@@ -116,6 +119,7 @@ function parseGraph(json: string): LibraryGraph {
       floor: g.floor,
       center: g.center,
       horizontalNeighbor: g.horizontal_neighbor,
+      vestibuleDirection: g.vestibule_direction,
       floorAbove: g.floor_above,
       floorBelow: g.floor_below,
     })),

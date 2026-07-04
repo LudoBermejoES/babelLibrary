@@ -48,6 +48,9 @@ pub struct Gallery {
     /// Index of the horizontally-adjacent gallery reachable through this
     /// gallery's vestibule, if any.
     pub horizontal_neighbor: Option<usize>,
+    /// `HEX_DIRECTIONS` index of the wall facing `horizontal_neighbor` — the
+    /// vestibule/doorway wall (see `GalleryShell::vestibule_direction`).
+    pub vestibule_direction: usize,
     /// Index of the gallery at `(q, r, floor + 1)`, if generated.
     pub floor_above: Option<usize>,
     /// Index of the gallery at `(q, r, floor - 1)`, if generated.

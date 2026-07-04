@@ -49,7 +49,7 @@ describe('GalleryStreamer', () => {
   });
 
   it('disposes a gallery that is no longer needed when the current gallery changes', async () => {
-    const books = fakeBooks(2500); // force multiple floors, real horizontal+vertical neighbors
+    const books = fakeBooks(3500); // force multiple floors, real horizontal+vertical neighbors
     const { graph, getGallery } = await createLibrary(11n, books);
     const scene = new THREE.Scene();
     const streamer = new GalleryStreamer(scene, graph, getGallery);
@@ -74,7 +74,7 @@ describe('GalleryStreamer', () => {
   });
 
   it('re-crossing back to a previously-visited gallery still works (buffer cache path)', async () => {
-    const books = fakeBooks(2500);
+    const books = fakeBooks(3500);
     const { graph, getGallery } = await createLibrary(11n, books);
     const scene = new THREE.Scene();
     const streamer = new GalleryStreamer(scene, graph, getGallery);
@@ -92,7 +92,7 @@ describe('GalleryStreamer', () => {
   });
 
   it('builds a vertical neighbor as a shaft-glimpse (not fully), and upgrades it when it becomes current', async () => {
-    const books = fakeBooks(2500);
+    const books = fakeBooks(3500);
     const { graph, getGallery } = await createLibrary(11n, books);
     const withVertical = graph.galleries.find((g) => g.floorAbove !== null || g.floorBelow !== null);
     expect(withVertical).toBeDefined();
@@ -115,7 +115,7 @@ describe('GalleryStreamer', () => {
   });
 
   it('downgrades a fully-built gallery to a shaft-glimpse once it is only a vertical neighbor again', async () => {
-    const books = fakeBooks(2500);
+    const books = fakeBooks(3500);
     const { graph, getGallery } = await createLibrary(11n, books);
     const withVertical = graph.galleries.find((g) => g.floorAbove !== null || g.floorBelow !== null)!;
     const verticalNeighborIndex = (withVertical.floorAbove ?? withVertical.floorBelow)!;
@@ -139,7 +139,7 @@ describe('GalleryStreamer', () => {
   });
 
   it('activeColliders unions the current gallery AND its live horizontal neighbors (doc 06: adjacent galleries in the active set)', async () => {
-    const books = fakeBooks(2500);
+    const books = fakeBooks(3500);
     const { graph, getGallery } = await createLibrary(11n, books);
     // A gallery with a horizontal neighbor (essentially all of them — the
     // ring gives each one a forward edge).

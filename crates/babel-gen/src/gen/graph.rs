@@ -32,6 +32,12 @@ pub struct GalleryShell {
     pub horizontal_neighbor: Option<usize>,
     pub floor_above: Option<usize>,
     pub floor_below: Option<usize>,
+    /// `HEX_DIRECTIONS` index of the wall facing `horizontal_neighbor` — the
+    /// vestibule/doorway wall. Meaningful only when `horizontal_neighbor` is
+    /// `Some`; defaults to 0 otherwise. Lets furnishing/emission place the
+    /// opening on the wall that actually faces the neighbor instead of a
+    /// fixed wall index.
+    pub vestibule_direction: usize,
 }
 
 /// The 6 axial-coordinate hex neighbor offsets, in a fixed order so
@@ -95,6 +101,7 @@ pub fn build_graph(seed: u64, book_count: usize) -> Vec<GalleryShell> {
                 horizontal_neighbor: None,
                 floor_above: None,
                 floor_below: None,
+                vestibule_direction: 0,
             });
         }
 
@@ -109,6 +116,14 @@ pub fn build_graph(seed: u64, book_count: usize) -> Vec<GalleryShell> {
             let this_idx = this_floor_start + i;
             let next_idx = this_floor_start + (i + 1) % n;
             shells[this_idx].horizontal_neighbor = Some(next_idx);
+            // The doorway wall faces the neighbor: the wall whose normal
+            // (angle 60°·w, per emit::wall_normal) points at the neighbor's
+            // world center. Under the true flat-top layout each neighbor sits
+            // exactly on one wall normal, so this is an exact match. (The
+            // HEX_DIRECTIONS array order does NOT line up 1:1 with wall
+            // angles, so we can't just use the array index.)
+            shells[this_idx].vestibule_direction =
+                wall_index_toward(positions[i], positions[(i + 1) % n]);
         }
 
         // Vertical connectivity to the floor below. Only the first
@@ -199,6 +214,40 @@ fn try_grow_cycle(rng: &mut impl Rng, target: usize) -> Option<Vec<(i32, i32)>> 
 fn is_hex_adjacent(a: (i32, i32), b: (i32, i32)) -> bool {
     let d = (b.0 - a.0, b.1 - a.1);
     HEX_DIRECTIONS.contains(&d)
+}
+
+/// The wall index (0..6) whose outward normal (`emit::wall_normal` angle
+/// 60°·w) points from `a` toward the world center of hex-adjacent cell `b`,
+/// under the true flat-top `hex_center` layout. Neighbors sit exactly on a
+/// wall normal, so the nearest-angle match is exact. Kept in sync with
+/// `emit::hex_center`/`emit::wall_normal` — they must agree or openings
+/// won't face neighbors.
+fn wall_index_toward(a: (i32, i32), b: (i32, i32)) -> usize {
+    let (ax, az) = hex_center_xz(a);
+    let (bx, bz) = hex_center_xz(b);
+    let target = (bz - az).atan2(bx - ax);
+    let sixth = std::f32::consts::PI / 3.0;
+    (0..6)
+        .min_by(|&u, &v| {
+            angular_distance(target, sixth * u as f32)
+                .partial_cmp(&angular_distance(target, sixth * v as f32))
+                .expect("finite angles")
+        })
+        .expect("0..6 is non-empty")
+}
+
+/// Smallest absolute angle between two directions, in `[0, PI]`.
+fn angular_distance(a: f32, b: f32) -> f32 {
+    let d = (a - b).rem_euclid(std::f32::consts::TAU);
+    d.min(std::f32::consts::TAU - d)
+}
+
+/// Flat-top hex axial `(q, r)` → world `(x, z)` — mirrors `emit::hex_center`.
+fn hex_center_xz((q, r): (i32, i32)) -> (f32, f32) {
+    let side = config::HEX_SIDE_M;
+    let x = side * 3f32.sqrt() * (q as f32 + r as f32 / 2.0);
+    let z = side * 1.5 * r as f32;
+    (x, z)
 }
 
 /// A guaranteed-closable fallback: a ring of `len` cells hugging the origin,

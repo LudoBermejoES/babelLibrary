@@ -110,3 +110,36 @@ proptest! {
         }
     }
 }
+
+// Flat-top hex axial -> world (must mirror emit::hex_center).
+fn hex_center_xz(q: i32, r: i32) -> (f32, f32) {
+    let side = 4.0f32;
+    (
+        side * 3f32.sqrt() * (q as f32 + r as f32 / 2.0),
+        side * 1.5 * r as f32,
+    )
+}
+
+#[test]
+fn each_gallery_records_its_edge_direction() {
+    // vestibule_direction is the WALL INDEX (normal angle 60°·w) whose
+    // outward normal points at the horizontal neighbor — so the vestibule
+    // opening is built on the wall actually facing the neighbor.
+    let shells = build_graph(7, 50);
+    for (i, shell) in shells.iter().enumerate() {
+        let Some(neighbor) = shell.horizontal_neighbor else {
+            continue;
+        };
+        let (ax, az) = hex_center_xz(shell.q, shell.r);
+        let (bx, bz) = hex_center_xz(shells[neighbor].q, shells[neighbor].r);
+        let to_neighbor = (bz - az).atan2(bx - ax);
+        let wall_angle = std::f32::consts::PI / 3.0 * shell.vestibule_direction as f32;
+        let diff = (to_neighbor - wall_angle).rem_euclid(std::f32::consts::TAU);
+        let diff = diff.min(std::f32::consts::TAU - diff);
+        assert!(
+            diff < 0.01,
+            "gallery {i}: vestibule_direction wall {} (angle {wall_angle}) must face neighbor at angle {to_neighbor}",
+            shell.vestibule_direction
+        );
+    }
+}

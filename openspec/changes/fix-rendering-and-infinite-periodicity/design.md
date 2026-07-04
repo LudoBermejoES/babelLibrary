@@ -98,6 +98,23 @@ Each directed edge `i → next` records the `HEX_DIRECTIONS` index used; the
 reverse cell stores the opposite direction. This replaces the open random
 walk whose ends were arbitrarily far apart.
 
+### D6a — Fix the flat-top/pointy-top hex layout mismatch (found while applying D7)
+
+Applying D7 surfaced a deeper pre-existing bug: `emit::hex_center` used
+**pointy-top** axial→world math (`x = side·1.5·q`, `z = side·√3·(r + q/2)`),
+which places neighbor galleries at world angles 30°/90°/150°… (the hex
+*vertex* directions) — while the walls are **flat-top** with normals at
+0°/60°/120°… So a neighbor sits exactly *between* two walls; no wall ever
+cleanly faces it, which is the true reason vestibule openings look into
+void. Fix: switch `hex_center` (and `graph::hex_center_xz`, which must mirror
+it) to the true flat-top formula `x = side·√3·(q + r/2)`, `z = side·1.5·r`,
+so neighbor centers land on wall normals and `vestibule_direction` is simply
+the axial `HEX_DIRECTIONS` index of the edge. Blast radius: the renderer's
+`hexShape` (already 30°-offset, stays valid), spawn pose, colliders, and
+streaming offsets — all covered by existing tests, so regressions surface
+immediately. This is the correct depth (per user decision) rather than
+snapping openings to the nearest wall.
+
 ### D7 — Direction-aware vestibule + anteroom, and wall-3 railing
 
 `furnish.rs`/`emit.rs` place the vestibule opening on the wall whose hex

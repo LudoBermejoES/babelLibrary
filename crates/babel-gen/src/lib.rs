@@ -142,6 +142,7 @@ struct GalleryJson {
     floor: i32,
     center: [f32; 3],
     horizontal_neighbor: Option<usize>,
+    vestibule_direction: usize,
     floor_above: Option<usize>,
     floor_below: Option<usize>,
 }
@@ -176,6 +177,7 @@ impl GraphJson {
                     [x, y, z]
                 },
                 horizontal_neighbor: g.horizontal_neighbor,
+                vestibule_direction: g.vestibule_direction,
                 floor_above: g.floor_above,
                 floor_below: g.floor_below,
             })

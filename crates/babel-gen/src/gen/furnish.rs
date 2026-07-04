@@ -43,6 +43,7 @@ pub fn furnish(seed: u64, shells: Vec<GalleryShell>, books: &[InputBook]) -> Lay
             r: shell.r,
             floor: shell.floor,
             horizontal_neighbor: shell.horizontal_neighbor,
+            vestibule_direction: shell.vestibule_direction,
             floor_above: shell.floor_above,
             floor_below: shell.floor_below,
             vestibule: Vestibule::from_shell(shell),

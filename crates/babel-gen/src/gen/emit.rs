@@ -8,11 +8,17 @@ use crate::gen::config;
 use crate::gen::Gallery;
 
 /// World-space center of a hex gallery, given its axial `(q, r)` and floor.
-/// Flat-top hex layout: `x = side * 3/2 * q`, `z = side * sqrt(3) * (r + q/2)`.
+/// True flat-top hex layout: `x = side * sqrt(3) * (q + r/2)`,
+/// `z = side * 3/2 * r`. This places each axial neighbor on a wall normal
+/// (world angles 0°/60°/120°…), so a gallery's vestibule opening on wall
+/// `HEX_DIRECTIONS[d]` genuinely faces the neighbor in direction `d`.
+/// (The earlier `x = 1.5·q`, `z = √3·(r + q/2)` form was pointy-top math —
+/// it put neighbors at the hex *vertices*, 30° off every wall, so no wall
+/// ever faced a neighbor and openings looked into void. See design D6a.)
 pub fn hex_center(gallery: &Gallery) -> (f32, f32, f32) {
     let side = config::HEX_SIDE_M;
-    let x = side * 1.5 * gallery.q as f32;
-    let z = side * 3f32.sqrt() * (gallery.r as f32 + gallery.q as f32 / 2.0);
+    let x = side * 3f32.sqrt() * (gallery.q as f32 + gallery.r as f32 / 2.0);
+    let z = side * 1.5 * gallery.r as f32;
     let y = gallery.floor as f32 * config::CEILING_HEIGHT_M;
     (x, y, z)
 }
@@ -405,21 +411,21 @@ fn hex_apothem() -> f32 {
     config::HEX_SIDE_M * 3f32.sqrt() / 2.0
 }
 
-/// Which of the 6 walls (0..6) is this gallery's vestibule. Deterministic:
-/// always wall 0 relative to whichever wall its `horizontal_neighbor` graph
-/// edge conceptually uses — since the graph doesn't track a specific wall
-/// index (any wall could serve; the shape is fixed, not the orientation),
-/// we fix vestibule = wall 0 and shaft-adjacent wall = wall 3 (opposite)
-/// for every gallery, keeping the 4 remaining walls (1,2,4,5) as shelf
-/// walls. This is a legitimate free choice: doc 04 fixes *how many* walls
-/// serve each role, not *which* wall index — orientation has no gameplay
-/// or fidelity consequence.
-fn vestibule_wall_index(_gallery: &Gallery) -> usize {
-    0
+/// Which of the 6 walls is this gallery's vestibule/doorway wall: the one
+/// facing its horizontal neighbor, recorded as `vestibule_direction` by the
+/// graph layer (a `HEX_DIRECTIONS` index, which is also the wall index since
+/// wall `i` faces hex direction `i`). This makes the opening actually face
+/// the neighbor instead of a hardcoded +x wall — walking through it leads to
+/// the connected gallery, and looking through it shows that gallery rather
+/// than empty space.
+fn vestibule_wall_index(gallery: &Gallery) -> usize {
+    gallery.vestibule_direction
 }
 
-fn shaft_wall_index(_gallery: &Gallery) -> usize {
-    3
+/// The shaft-facing wall: opposite the vestibule wall, so the four remaining
+/// walls stay as the shelf walls.
+fn shaft_wall_index(gallery: &Gallery) -> usize {
+    (gallery.vestibule_direction + 3) % 6
 }
 
 fn shelf_wall_indices(gallery: &Gallery) -> [usize; 4] {
