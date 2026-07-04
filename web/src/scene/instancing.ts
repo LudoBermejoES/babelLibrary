@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { GalleryBuffers } from '../wasm';
 import { BOOK_ARCHETYPE_COUNT, createAsset } from './assets';
+import { countPropsOfKind, forEachProp, LAMP_KIND } from './props';
 
 const shelfBayGeometry = (createAsset('shelfBay') as THREE.Mesh).geometry;
 const shelfBayMaterial = (createAsset('shelfBay') as THREE.Mesh).material as THREE.Material;
@@ -30,7 +31,7 @@ export function buildGalleryInstances(buffers: GalleryBuffers): GalleryInstances
   const shelfCount = buffers.shelfTransforms.length / 16;
   group.add(buildTransformOnlyInstancedMesh(shelfBayGeometry, shelfBayMaterial, buffers.shelfTransforms, shelfCount));
 
-  const lampCount = countPropsOfKind(buffers.propTransforms, 1 /* lamp */);
+  const lampCount = countPropsOfKind(buffers.propTransforms, LAMP_KIND);
   group.add(buildLampInstances(buffers.propTransforms, lampCount));
 
   const bookCount = buffers.bookIds.length;
@@ -53,25 +54,11 @@ function buildTransformOnlyInstancedMesh(
   return mesh;
 }
 
-/** `prop_transforms` records are `[kind, m0..m15]` (17 f32, doc 04). */
-function countPropsOfKind(propTransforms: Float32Array, kind: number): number {
-  let count = 0;
-  for (let i = 0; i + 17 <= propTransforms.length; i += 17) {
-    if (propTransforms[i] === kind) count++;
-  }
-  return count;
-}
-
 function buildLampInstances(propTransforms: Float32Array, lampCount: number): THREE.InstancedMesh {
   const mesh = new THREE.InstancedMesh(lampGeometry, lampMaterial, lampCount);
-  const matrix = new THREE.Matrix4();
-  let instanceIndex = 0;
-  for (let i = 0; i + 17 <= propTransforms.length; i += 17) {
-    if (propTransforms[i] !== 1) continue;
-    matrix.fromArray(propTransforms, i + 1);
+  forEachProp(propTransforms, LAMP_KIND, (matrix, instanceIndex) => {
     mesh.setMatrixAt(instanceIndex, matrix);
-    instanceIndex++;
-  }
+  });
   mesh.instanceMatrix.needsUpdate = true;
   mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
   return mesh;

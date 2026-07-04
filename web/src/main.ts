@@ -11,10 +11,6 @@ import type { BookMeta } from './api/types';
 import { createLibrary } from './wasm';
 import { installDebugHook, isE2eMode } from './debug';
 
-export function placeholderReady(): boolean {
-  return true;
-}
-
 /** Default seed (doc 01/02): `?seed=<u64>` overrides it. */
 const DEFAULT_SEED = 0xbabe1n;
 
@@ -34,6 +30,23 @@ function showWebglUnavailable(app: HTMLDivElement): void {
   panel.className = 'webgl-error';
   panel.textContent =
     'babelLibrary needs WebGL2, which this browser cannot provide right now. Try a recent version of Chrome, Firefox, or Safari, and make sure hardware acceleration is enabled.';
+  app.appendChild(panel);
+}
+
+/**
+ * Shown when boot fails after the canvas exists (catalog fetch, wasm init)
+ * — the same graceful-degradation rule as the WebGL2-missing path: a
+ * failure must never leave a silent black canvas.
+ */
+export function showBootError(err: unknown): void {
+  console.error('boot failed', err);
+  const app = document.querySelector<HTMLDivElement>('#app');
+  if (!app) return;
+  const panel = document.createElement('div');
+  panel.dataset.testid = 'boot-error';
+  panel.className = 'webgl-error';
+  panel.textContent =
+    'babelLibrary could not load — the book catalog or the layout generator failed to start. Check that the server is running and seeded, then reload.';
   app.appendChild(panel);
 }
 

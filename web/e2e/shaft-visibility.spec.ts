@@ -24,7 +24,11 @@ test('a gallery with a generated floor-below counterpart shows it through the sh
   expect(result.glimpseExists).toBe(true);
 });
 
-test('a gallery with no floor-below shows no shaft glimpse below it', async ({ page }) => {
+// NOTE: this asserts the *current* pre-wrap behavior (a gallery with no
+// generated floor-below has no down-glimpse). Task 3.4 (vertical visual
+// wrap) will invert this — the bottom floor will show the wrapped top
+// floor's glimpse — and this test will be replaced by the no-void survey.
+test('a gallery with no floor-below has no down-glimpse (pre-wrap behavior)', async ({ page }) => {
   await page.goto('/?e2e&e2eBookCount=3500');
   await page.waitForFunction(() => window.__babel !== undefined);
 
@@ -32,19 +36,19 @@ test('a gallery with no floor-below shows no shaft glimpse below it', async ({ p
     const babel = window.__babel!;
     const count = babel.galleryCount;
     for (let i = 0; i < count; i++) {
-      const below = babel.floorNeighborOf(i, 'below');
-      const above = babel.floorNeighborOf(i, 'above');
-      if (below === null) {
+      if (babel.floorNeighborOf(i, 'below') === null && babel.floorNeighborOf(i, 'above') !== null) {
+        // A top-floor gallery: has an upward link but no downward one.
         babel.setCurrentGallery(i);
-        // No floor-below link at all for this gallery: nothing should ever
-        // claim to be its "shaft-glimpse-below" — there is no such index.
-        return { found: true, hasAbove: above !== null };
+        // Its own gallery is fully built (a glimpse group is only for
+        // NEIGHBORS), and there is no floor-below index to have glimpsed.
+        return { found: true, ownGalleryLive: babel.liveGalleryIndices().includes(i) };
       }
     }
-    return { found: false, hasAbove: false };
+    return { found: false, ownGalleryLive: false };
   });
 
   expect(result.found).toBe(true);
+  expect(result.ownGalleryLive).toBe(true);
 });
 
 test('walking into a shaft-glimpse gallery upgrades it to a fully-built gallery', async ({ page }) => {

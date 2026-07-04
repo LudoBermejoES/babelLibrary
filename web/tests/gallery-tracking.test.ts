@@ -45,6 +45,21 @@ describe('trackGallery', () => {
     expect(result.index).toBe(1);
   });
 
+  it('switches back to the reverse horizontal neighbor in a directed ring (walking back the way you came)', () => {
+    // One-way ring 0->1->2->0. Standing in gallery 1 (whose own neighbor is
+    // 2), walk back toward gallery 0's center. Gallery 0 points at 1, so the
+    // shared doorway is walkable both ways — tracking must flip back to 0.
+    const galleries = [
+      gallery({ index: 0, center: [0, 0, 0], horizontalNeighbor: 1 }),
+      gallery({ index: 1, center: [HEX_SIDE * 1.5, 0, 0], horizontalNeighbor: 2 }),
+      gallery({ index: 2, center: [HEX_SIDE * 3, 0, 0], horizontalNeighbor: 0 }),
+    ];
+    const current: TrackedGallery = { index: 1, floor: 0 };
+    const position: [number, number, number] = [0.1, 1.7, 0]; // essentially at gallery 0's center
+    const result = trackGallery(position, current, galleries, CEILING_HEIGHT);
+    expect(result.index).toBe(0);
+  });
+
   it('switches floor via the height band once the player is well past the floor boundary', () => {
     const galleries = [
       gallery({ index: 0, center: [0, 0, 0], floor: 0, floorAbove: 1 }),

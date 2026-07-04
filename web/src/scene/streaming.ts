@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import type { GalleryBuffers, LibraryConfig, LibraryGallery } from '../wasm';
+import { horizontalNeighborsOf } from '../graph';
+import { appendAabbs, type Aabb } from '../controls/collide';
 import { buildGalleryArchitecture } from './gallery';
 import { buildGalleryInstances } from './instancing';
 import { buildGalleryLights } from './lighting';
@@ -26,7 +28,7 @@ export function neededGalleryMembership(galleries: LibraryGallery[], currentInde
   const glimpse = new Set<number>();
   if (!current) return { full, glimpse };
 
-  if (current.horizontalNeighbor !== null) full.add(current.horizontalNeighbor);
+  for (const neighbor of horizontalNeighborsOf(galleries, currentIndex)) full.add(neighbor);
   if (current.floorAbove !== null && !full.has(current.floorAbove)) glimpse.add(current.floorAbove);
   if (current.floorBelow !== null && !full.has(current.floorBelow)) glimpse.add(current.floorBelow);
 
@@ -98,18 +100,34 @@ export class GalleryStreamer {
     return this.liveBuffers.get(index)?.vestibule;
   }
 
-  /** Flat `[minX,minY,minZ,maxX,maxY,maxZ]` AABBs for a fully-built gallery's walls/shelves/tables (`colliders`) plus the shaft railing (`shaft_colliders`), doc 06 "Collision: capsule vs static AABBs." `undefined` for a glimpse-tier or not-live gallery — there is nothing to collide with in an unbuilt gallery. */
-  collidersFor(index: number): Float32Array | undefined {
-    const buffers = this.liveBuffers.get(index);
-    if (!buffers) return undefined;
-    const combined = new Float32Array(buffers.colliders.length + buffers.shaftColliders.length);
-    combined.set(buffers.colliders, 0);
-    combined.set(buffers.shaftColliders, buffers.colliders.length);
-    return combined;
-  }
-
   vestibuleCountsFor(index: number): VestibuleCounts | undefined {
     return this.vestibuleCounts.get(index);
+  }
+
+  /**
+   * Parsed collider AABBs for the full walkable membership of `currentIndex`
+   * — the current gallery AND its live horizontal neighbors (doc 06: "the
+   * active collider set = current gallery + adjacent galleries' AABBs").
+   * Colliding against only the current gallery let a player in the tracking
+   * hysteresis band clip through a neighbor's facing wall. Returned as ready
+   * `Aabb` tuples so the caller can cache them at the gallery-change
+   * boundary rather than re-parsing the flat buffers every frame.
+   */
+  activeColliders(currentIndex: number): Aabb[] {
+    const { full } = neededGalleryMembership(this.graph.galleries, currentIndex);
+    const boxes: Aabb[] = [];
+    for (const index of full) {
+      const buffers = this.liveBuffers.get(index);
+      if (!buffers) continue;
+      appendAabbs(boxes, buffers.colliders);
+      appendAabbs(boxes, buffers.shaftColliders);
+    }
+    return boxes;
+  }
+
+  /** Whether a gallery is currently fully built with live buffers — used by tests to assert collider availability. */
+  hasLiveBuffers(index: number): boolean {
+    return this.liveBuffers.has(index);
   }
 
   /** Recomputes membership for `currentIndex` and builds/disposes/upgrades/downgrades to match. No-op if nothing changed (doc 05 frame-loop note). */
@@ -175,11 +193,22 @@ export class GalleryStreamer {
     if (!group) return;
 
     group.traverse((obj) => {
+      const instanced = obj as THREE.InstancedMesh;
+      if (instanced.isInstancedMesh) {
+        // InstancedMeshes (books/shelves/lamps) share module-level singleton
+        // geometry from instancing.ts — disposing that geometry would rip
+        // the GPU buffers out from under every OTHER live gallery's
+        // instanced meshes (that was the bug). InstancedMesh.dispose() frees
+        // only this mesh's own per-instance matrix/color buffers, which is
+        // exactly what we want, and leaves the shared geometry intact.
+        instanced.dispose();
+        return;
+      }
       const mesh = obj as THREE.Mesh;
-      if (mesh.isMesh) mesh.geometry.dispose();
+      if (mesh.isMesh) mesh.geometry.dispose(); // per-gallery geometry (walls, floor, closets)
       // Materials are shared across galleries (module-level singletons in
-      // assets.ts) and never disposed here — disposing them would break
-      // every other live gallery using the same material instance.
+      // assets.ts / gallery.ts) and never disposed here — disposing them
+      // would break every other live gallery using the same material.
     });
 
     this.scene.remove(group);

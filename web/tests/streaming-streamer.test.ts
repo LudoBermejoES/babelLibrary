@@ -138,27 +138,87 @@ describe('GalleryStreamer', () => {
     expect(scene.getObjectByName(`gallery-${withVertical.index}`)).toBeUndefined();
   });
 
-  it('collidersFor combines colliders and shaft_colliders for a fully-built gallery, and is undefined otherwise', async () => {
+  it('activeColliders unions the current gallery AND its live horizontal neighbors (doc 06: adjacent galleries in the active set)', async () => {
     const books = fakeBooks(2500);
     const { graph, getGallery } = await createLibrary(11n, books);
-    const withVertical = graph.galleries.find((g) => g.floorAbove !== null || g.floorBelow !== null)!;
-    const verticalNeighborIndex = (withVertical.floorAbove ?? withVertical.floorBelow)!;
+    // A gallery with a horizontal neighbor (essentially all of them — the
+    // ring gives each one a forward edge).
+    const withHorizontal = graph.galleries.find((g) => g.horizontalNeighbor !== null)!;
+    const neighborIndex = withHorizontal.horizontalNeighbor!;
 
     const scene = new THREE.Scene();
     const streamer = new GalleryStreamer(scene, graph, getGallery);
-    streamer.update(withVertical.index);
+    streamer.update(withHorizontal.index);
 
-    const buffers = getGallery(withVertical.index);
-    const combined = streamer.collidersFor(withVertical.index);
-    expect(combined).toBeDefined();
-    expect(combined!.length).toBe(buffers.colliders.length + buffers.shaftColliders.length);
-    expect(Array.from(combined!.subarray(0, buffers.colliders.length))).toEqual(Array.from(buffers.colliders));
+    // Expected count = sum over the entire live full-membership set (current
+    // + every horizontal neighbor, forward and reverse), which is what the
+    // active collider union must cover.
+    const fullyBuilt = [...streamer.fullyBuiltGalleryIndices];
+    const expectedAABBs = fullyBuilt.reduce((sum, i) => {
+      const b = getGallery(i);
+      return sum + (b.colliders.length + b.shaftColliders.length) / 6;
+    }, 0);
 
-    // The glimpse-tier vertical neighbor has no buffers loaded, so no colliders.
-    expect(streamer.collidersFor(verticalNeighborIndex)).toBeUndefined();
-    // A gallery outside the current needed set entirely has no live buffers either.
-    const neverVisited = graph.galleries.find((g) => !streamer.liveGalleryIndices.has(g.index))!;
-    expect(neverVisited).toBeDefined();
-    expect(streamer.collidersFor(neverVisited.index)).toBeUndefined();
+    const active = streamer.activeColliders(withHorizontal.index);
+    // The active set must include the current gallery's colliders AND its
+    // horizontal neighbor's — colliding against only the current gallery let
+    // the player clip through the neighbor's facing wall in the tracking
+    // hysteresis band. There must be more than one gallery's worth.
+    expect(streamer.hasLiveBuffers(neighborIndex)).toBe(true);
+    expect(fullyBuilt.length).toBeGreaterThan(1);
+    expect(active.length).toBe(expectedAABBs);
+    for (const box of active) expect(box).toHaveLength(6);
+  });
+});
+
+describe('GalleryStreamer.dispose', () => {
+  it('never disposes the shared instanced geometries still used by other live galleries, but does dispose per-gallery geometry and instance buffers', async () => {
+    const books = fakeBooks(50);
+    const { graph, getGallery } = await createLibrary(7n, books);
+    const scene = new THREE.Scene();
+    const streamer = new GalleryStreamer(scene, graph, getGallery);
+
+    streamer.update(0);
+    const gallery0 = scene.getObjectByName('gallery-0')!;
+
+    // Grab references before disposal: a shared instanced geometry (books/
+    // shelves/lamps use module-level singletons) and a per-gallery wall
+    // geometry (built fresh per gallery).
+    let sharedGeometry: THREE.BufferGeometry | null = null;
+    let perGalleryGeometry: THREE.BufferGeometry | null = null;
+    let instancedMesh: THREE.InstancedMesh | null = null;
+    gallery0.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if ((mesh as THREE.InstancedMesh).isInstancedMesh && !sharedGeometry) {
+        sharedGeometry = mesh.geometry;
+        instancedMesh = mesh as THREE.InstancedMesh;
+      } else if (mesh.isMesh && !perGalleryGeometry) {
+        perGalleryGeometry = mesh.geometry;
+      }
+    });
+    expect(sharedGeometry).not.toBeNull();
+    expect(perGalleryGeometry).not.toBeNull();
+
+    let sharedDisposed = false;
+    let perGalleryDisposed = false;
+    let instancedMeshDisposed = false;
+    sharedGeometry!.addEventListener('dispose', () => {
+      sharedDisposed = true;
+    });
+    perGalleryGeometry!.addEventListener('dispose', () => {
+      perGalleryDisposed = true;
+    });
+    instancedMesh!.addEventListener('dispose', () => {
+      instancedMeshDisposed = true;
+    });
+
+    // Move current to mid-ring so gallery 0 leaves the needed set (the last
+    // gallery won't do: its ring neighbor wraps back to 0, keeping it live).
+    streamer.update(3);
+    expect(scene.getObjectByName('gallery-0')).toBeUndefined();
+
+    expect(sharedDisposed).toBe(false); // shared singleton must survive
+    expect(perGalleryDisposed).toBe(true); // per-gallery geometry must be freed
+    expect(instancedMeshDisposed).toBe(true); // instance buffers must be freed
   });
 });

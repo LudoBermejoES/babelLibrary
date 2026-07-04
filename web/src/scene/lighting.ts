@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { forEachProp, LAMP_KIND } from './props';
 
 /** Warm base ambient so nothing is pitch black (spec: all traversable areas readable) while staying true to Borges' "insufficient" light. Added once, scene-global. */
 export function createAmbientLight(): THREE.AmbientLight {
@@ -10,16 +11,14 @@ export function createFog(): THREE.FogExp2 {
   return new THREE.FogExp2(0x14100c, 0.045);
 }
 
-/** World-space positions of every lamp-kind (`kind === 1`) record in a `prop_transforms` buffer (`[kind, m0..m15]`, 17 f32 per doc 04). */
+/** World-space positions of every lamp in a `prop_transforms` buffer (doc 04 record layout via the shared `props` iterator). */
 export function lampWorldPositions(propTransforms: Float32Array): Array<[number, number, number]> {
   const positions: Array<[number, number, number]> = [];
-  const matrix = new THREE.Matrix4();
-  for (let i = 0; i + 17 <= propTransforms.length; i += 17) {
-    if (propTransforms[i] !== 1) continue;
-    matrix.fromArray(propTransforms, i + 1);
-    const position = new THREE.Vector3().setFromMatrixPosition(matrix);
+  const position = new THREE.Vector3();
+  forEachProp(propTransforms, LAMP_KIND, (matrix) => {
+    position.setFromMatrixPosition(matrix);
     positions.push([position.x, position.y, position.z]);
-  }
+  });
   return positions;
 }
 

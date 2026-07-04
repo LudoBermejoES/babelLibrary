@@ -3,6 +3,13 @@ import { CAPSULE_RADIUS } from './constants';
 /** `[minX, minY, minZ, maxX, maxY, maxZ]` — a static collider AABB (doc 04 buffer layout). */
 export type Aabb = [number, number, number, number, number, number];
 
+/** Decodes a flat stride-6 AABB buffer (doc 04) into `Aabb` tuples, appending to `out`. Shared decoder so collision, railing visuals, and the streamer agree on the record shape. */
+export function appendAabbs(out: Aabb[], buffer: Float32Array): void {
+  for (let i = 0; i + 6 <= buffer.length; i += 6) {
+    out.push([buffer[i]!, buffer[i + 1]!, buffer[i + 2]!, buffer[i + 3]!, buffer[i + 4]!, buffer[i + 5]!]);
+  }
+}
+
 const ITERATIONS = 3;
 
 /**

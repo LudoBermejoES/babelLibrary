@@ -17,6 +17,8 @@ export interface BabelDebugHook {
   seed: string;
   liveGalleryIndices(): number[];
   setCurrentGallery(index: number): void;
+  /** The player's currently tracked gallery index — must stay in sync with setCurrentGallery (they desynced before the fix). */
+  trackedGalleryIndex(): number;
   wallMeshCountForGallery(index: number): number;
   instanceCountsForGallery(index: number): StreamedGalleryCounts;
   vestibuleMeshCountsForGallery(index: number): { mirrors: number; closets: number };
@@ -30,6 +32,8 @@ export interface BabelDebugHook {
   /** Moves the camera to a world position and re-runs gallery-tracking from it — doc 06 "Gallery tracking" wiring, exercised directly since it's normally driven by real WASD movement (blocked by headless Pointer Lock, see doc 09 §6). */
   teleportAndTrack(x: number, y: number, z: number): { galleryIndex: number; floor: number };
   galleryCenter(index: number): [number, number, number] | null;
+  /** Points the camera at a world position — lets e2e/visual checks control the view direction, since real mouse-look needs pointer lock (headless-blocked). */
+  lookAt(x: number, y: number, z: number): void;
 }
 
 declare global {
@@ -57,13 +61,6 @@ export function installDebugHook(
   // Every hexagon has the identical fixed shape/orientation, so gallery 0's
   // spawn offset from its own center is the correct standing pose for any
   // gallery — no generator constants duplicated here.
-  const spawnGalleryCenter = graph.galleries[graph.spawn.gallery]!.center;
-  const standOffset: [number, number, number] = [
-    graph.spawn.position[0] - spawnGalleryCenter[0],
-    graph.spawn.position[1] - spawnGalleryCenter[1],
-    graph.spawn.position[2] - spawnGalleryCenter[2],
-  ];
-
   window.__babel = {
     galleryCount: graph.galleries.length,
     seed: seed.toString(),
@@ -80,20 +77,24 @@ export function installDebugHook(
       return [...streamer.liveGalleryIndices].sort((a, b) => a - b);
     },
     setCurrentGallery(index: number): void {
-      streamer.update(index);
-      // Move the "player" too — a current gallery with the camera left
-      // behind in a disposed one renders nothing (drawCalls 0), which made
-      // both the perf gate and the visual demo meaningless. This is the
-      // teleport half of doc 09's eventual teleport(q,r,floor,...) hook.
-      const gallery = graph.galleries[index];
-      if (!gallery) return;
-      const [gx, gy, gz] = gallery.center;
-      camera.position.set(gx + standOffset[0], gy + standOffset[1], gz + standOffset[2]);
+      // Route entirely through the player so there is ONE owner of "current
+      // gallery" state — teleport the camera to the gallery's standing pose,
+      // then set the player's tracked gallery (which drives the streamer and
+      // the collider cache). Previously this called streamer.update directly
+      // and left player.tracked stale, so the next movement tick collided
+      // against a disposed gallery and re-ripped the scene out.
+      const pose = player.standingPoseFor(index);
+      if (!pose) return;
+      camera.position.set(pose.position[0], pose.position[1], pose.position[2]);
       camera.lookAt(
-        camera.position.x + Math.cos(graph.spawn.yaw),
+        camera.position.x + Math.cos(pose.yaw),
         camera.position.y,
-        camera.position.z + Math.sin(graph.spawn.yaw),
+        camera.position.z + Math.sin(pose.yaw),
       );
+      player.setTrackedGallery(index);
+    },
+    trackedGalleryIndex(): number {
+      return player.trackedGallery.index;
     },
     wallMeshCountForGallery(index: number): number {
       const group = scene.getObjectByName(`gallery-${index}`);
@@ -144,6 +145,9 @@ export function installDebugHook(
     },
     galleryCenter(index: number): [number, number, number] | null {
       return graph.galleries[index]?.center ?? null;
+    },
+    lookAt(x: number, y: number, z: number): void {
+      camera.lookAt(x, y, z);
     },
   };
 }

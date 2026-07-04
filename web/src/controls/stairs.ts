@@ -13,6 +13,30 @@ export interface HelixGeometry {
   topY: number;
 }
 
+/**
+ * The walkable helix's vertical `[bottomY, topY]` band, expressed in
+ * **eye-height** terms (doc 06). The camera stands at `floorY + eyeHeight`,
+ * so the band must be anchored there — not at floor level — or the
+ * footprint test never engages (down-staircase) and climbing tops out a
+ * floor short of the height `trackGallery` needs to register a floor change
+ * (up-staircase). An up link raises `topY` by one ceiling; a down link
+ * lowers `bottomY` by one ceiling; with neither the band is degenerate
+ * (zero height) so `isWithinHelixFootprint` never returns true.
+ */
+export function helixBand(
+  floorY: number,
+  eyeHeight: number,
+  ceilingHeight: number,
+  hasStairUp: boolean,
+  hasStairDown: boolean,
+): { bottomY: number; topY: number } {
+  const eyeY = floorY + eyeHeight;
+  return {
+    bottomY: hasStairDown ? eyeY - ceilingHeight : eyeY,
+    topY: hasStairUp ? eyeY + ceilingHeight : eyeY,
+  };
+}
+
 /** True while the player's horizontal position is within the helix's radius and their y is between the two floors it connects — the condition for `verticalMode: 'stairs'` (doc 06). */
 export function isWithinHelixFootprint(position: readonly [number, number, number], helix: HelixGeometry): boolean {
   const [x, y, z] = position;

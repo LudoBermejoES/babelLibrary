@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { advanceOnHelix, isWithinHelixFootprint, type HelixGeometry } from '../src/controls/stairs';
+import { advanceOnHelix, helixBand, isWithinHelixFootprint, type HelixGeometry } from '../src/controls/stairs';
 
 const HELIX: HelixGeometry = {
   center: [0, 0],
@@ -103,5 +103,34 @@ describe('verticalMode transitions (doc 06: enter sets stairs, radial step-off r
     const steppedOff: [number, number, number] = [position[0] * 3, midClimbY, position[2] * 3];
     expect(isWithinHelixFootprint(steppedOff, HELIX)).toBe(false); // verticalMode: 'flat'
     expect(steppedOff[1]).toBe(midClimbY); // same y as the instant before stepping off — no snap
+  });
+});
+
+describe('helixBand (eye-height-relative walkable band)', () => {
+  const CEILING = 3.2;
+  const EYE = 1.7;
+
+  it('an up-staircase on floor 0 spans from this floor eye height to the next floor eye height', () => {
+    // Camera stands at floorY(0) + EYE = 1.7. Climbing must top out at
+    // floorY(1) + EYE = 4.9 so gallery-tracking (which needs eye y >= the
+    // next floor's boundary) actually recognizes the floor change.
+    const band = helixBand(0, EYE, CEILING, true, false);
+    expect(band.bottomY).toBeCloseTo(EYE); // 1.7 — the camera's current eye y
+    expect(band.topY).toBeCloseTo(CEILING + EYE); // 4.9 — next floor's eye height
+  });
+
+  it('a down-staircase on floor 1 is enterable at that floor eye height', () => {
+    // Standing on floor 1: camera eye y = 3.2 + 1.7 = 4.9. A down staircase
+    // must have its band reach up to 4.9 (this floor's eye height) or the
+    // player can never step onto it. It spans down to floor 0's eye height.
+    const floor1Y = CEILING;
+    const band = helixBand(floor1Y, EYE, CEILING, false, true);
+    expect(band.topY).toBeCloseTo(floor1Y + EYE); // 4.9 — enterable from where the camera is
+    expect(band.bottomY).toBeCloseTo(EYE); // 1.7 — floor 0's eye height
+  });
+
+  it('a vestibule with no staircase has a zero-height band (never engages)', () => {
+    const band = helixBand(0, EYE, CEILING, false, false);
+    expect(band.topY).toBeCloseTo(band.bottomY);
   });
 });

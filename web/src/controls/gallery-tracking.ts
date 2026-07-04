@@ -1,4 +1,5 @@
 import type { LibraryGallery } from '../wasm';
+import { horizontalNeighborsOf } from '../graph';
 import { GALLERY_HYSTERESIS } from './constants';
 
 export interface TrackedGallery {
@@ -44,20 +45,23 @@ export function trackGallery(
     }
   }
 
-  // Horizontal: only the current gallery and its one horizontal neighbor
-  // are ever candidates (each hexagon has at most one horizontal
-  // neighbor — doc 04) — compare distance-to-center with hysteresis
-  // rather than a full nearest-of-all-galleries search.
-  if (currentGallery.horizontalNeighbor !== null) {
-    const neighbor = galleries[currentGallery.horizontalNeighbor];
-    if (neighbor) {
-      const distToCurrent = Math.hypot(position[0] - currentGallery.center[0], position[2] - currentGallery.center[2]);
-      const distToNeighbor = Math.hypot(position[0] - neighbor.center[0], position[2] - neighbor.center[2]);
-      if (distToNeighbor + GALLERY_HYSTERESIS < distToCurrent) {
-        return { index: neighbor.index, floor: current.floor };
-      }
+  // Horizontal: candidates are BOTH horizontal neighbors — the current
+  // gallery's forward edge and any gallery whose forward edge points at it
+  // (the directed ring is walkable both ways; see horizontalNeighborsOf).
+  // Switch to the nearest neighbor that is closer than the current gallery
+  // by more than the hysteresis margin, so walking back the way you came
+  // re-tracks instead of leaving you in a disposed gallery.
+  const distToCurrent = Math.hypot(position[0] - currentGallery.center[0], position[2] - currentGallery.center[2]);
+  let best: { index: number; dist: number } | null = null;
+  for (const neighborIndex of horizontalNeighborsOf(galleries, current.index)) {
+    const neighbor = galleries[neighborIndex];
+    if (!neighbor) continue;
+    const dist = Math.hypot(position[0] - neighbor.center[0], position[2] - neighbor.center[2]);
+    if (dist + GALLERY_HYSTERESIS < distToCurrent && (best === null || dist < best.dist)) {
+      best = { index: neighborIndex, dist };
     }
   }
+  if (best !== null) return { index: best.index, floor: current.floor };
 
   return current;
 }
