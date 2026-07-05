@@ -13,7 +13,8 @@ Per gallery, built from `GalleryBuffers` (doc 04):
 
 | Element | Source | Technique |
 |---|---|---|
-| Floor/ceiling | hex from `graph_json` center + side constant, with a circular hole at the center for the shaft | one `ShapeGeometry` hex (with hole path) each, shared material |
+| Floor/ceiling | hex from `graph_json` center + side constant, with a circular hole at the center for the shaft | one `ShapeGeometry` hex (with hole path) each, shared **`DoubleSide`** material (so the shaft up/down sightline sees their far face instead of culling through to void) |
+| Shaft well | `shaft_radius` config + a fixed multi-floor span | a tall open-ended `CylinderGeometry` around the shaft; stops a straight up/down look from seeing through the stacked floor holes into void (see "No black void" below) |
 | Shelf walls & vestibule opening | `wall_segments` | wall pieces as `BoxGeometry` segments (vestibule-opening kind → two flanking boxes + lintel), shared material; merged per gallery with `BufferGeometryUtils.mergeGeometries` → 1 draw. Always exactly 4 shelf walls + 1 opening per hexagon (doc 04). |
 | Central shaft | `shaft_colliders` (collision) + fixed-radius geometry (visual) | a low ring mesh (railing) + the floor/ceiling holes above; looking through reveals the hexagon at the same `(q, r)` on the floor above/below, if generated |
 | Vestibule room | `vestibule` buffer | small boxed anteroom geometry, a mirror plane (high-metalness/low-roughness material + `PMREMGenerator` env map — not a full reflection render pass), 2 closet-door meshes, and — where flagged — a spiral staircase GLB/procedural mesh (up, down, or both) |
@@ -52,6 +53,44 @@ Borges is explicit here: "the light they give is insufficient, and unceasing" �
 - Per gallery: exactly **2** `PointLight(0xffd9a0, intensity ~8, distance 10, decay 2)` at the two lamp prop positions from `prop_transforms` (crosswise placement, per doc 04) — dimmer than a single central light would be, matching "insufficient." Lights belong to the gallery's `Group`, so only current+adjacent galleries' lights exist.
 - No shadows in v1 (biggest single perf lever); fake grounding with a subtle radial-gradient AO texture on the floor under shelves/tables. Baked lightmaps are the polish-phase upgrade.
 - `FogExp2(0x14100c, 0.045)` — depth cue through vestibule openings and the shaft, hides the far plane; also visually explains why the "endless" floors above/below fade to darkness rather than needing to render arbitrarily far.
+
+## No black void — the library is infinite in every sightline
+
+The library is infinite and periodic; the player must never see a pure-black
+hole, only library fading into darkness. Four changes enforce this (verified by
+the `e2e/no-void.spec.ts` gate + `surveyNearBlackFraction` debug hook, which
+render a frame and count pixels darker than the fog floor):
+
+1. **Renderer clear color = the fog color** (`renderer.setClearColor(0x14100c)`).
+   Any sightline that reaches past the rendered geometry fades into the *same*
+   warm darkness the fog produces, so "void" and "far distance" are visually
+   identical — the intended endless look, never a jarring black hole. This is
+   the decisive fix; without it, every uncovered pixel showed pure black.
+2. **Floor/ceiling hex shells are `DoubleSide`** (`scene/hex-shell.ts`). They
+   were single-sided and got back-face-culled from the vertical shaft
+   sightline, leaving the up/down view see-through to void. This was the true
+   root cause of the "looking up the shaft is black" report.
+3. **Shaft well** (`buildShaftWell`): a tall inner cylinder around the central
+   shaft so a straight up/down look lands on lit stone rather than passing
+   through the aligned floor holes of every stacked floor.
+4. **Wall-3 replica**: the shaft-opposite hex wall (`vestibule_direction + 3`)
+   is emitted as an *open gap* (no `wall_segments` entry). The streamer renders
+   a full-architecture replica of the current gallery, translated one hex-width
+   along that wall's outward normal, so the gap shows the room repeating
+   outward (the horizontal replication that models horizontal infinity).
+
+## Vertical visual wrap
+
+Vertical periodicity is **visual-only** in v1 (you cannot walk above the top
+floor to emerge on floor 0 — a stated non-goal). When a gallery's real
+`floorAbove`/`floorBelow` is `null` (top/bottom floor), the streamer
+(`graph.verticalWrapGlimpses` + `reconcileWrapGlimpses`) renders the *wrapped*
+floor's counterpart at the same `(q, r)`, offset ±one ceiling height, as an
+extra glimpse group — so the top floor's up-shaft shows floor 0 and the bottom
+floor's down-shaft shows the top floor. These wrap/replica glimpses live in a
+separate map (`liveWrapGlimpses`, keyed by unique name) since they render at
+non-canonical positions; they are disposed and rebuilt wholesale on gallery
+change (the set is 0–2 groups).
 
 ## Gallery streaming
 

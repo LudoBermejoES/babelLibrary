@@ -22,9 +22,25 @@ export function isWebGL2Available(): boolean {
  * so the failure path never reaches an uncaught exception or blank canvas.
  */
 export function createRenderer(container: HTMLElement): AppRenderer {
-  const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  // `preserveDrawingBuffer` only under e2e mode: the no-void survey
+  // (debug.ts surveyNearBlackFraction) reads the canvas back through a 2D
+  // context after a manual render, which needs the drawing buffer to survive
+  // past the render call. Production leaves it off (the default) so the
+  // compositor can discard the buffer for performance.
+  const preserveDrawingBuffer = new URLSearchParams(window.location.search).has('e2e');
+  const renderer = new THREE.WebGLRenderer({
+    antialias: true,
+    powerPreference: 'high-performance',
+    preserveDrawingBuffer,
+  });
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  // Clear color = the fog color (see lighting.ts createFog, 0x14100c). The
+  // library is infinite: any sightline that reaches beyond the rendered
+  // geometry must fade into the same warm darkness the fog produces, never a
+  // jarring pure-black hole. With this, "void" and "far distance" are visually
+  // identical dark — which is the intended endless-library look, not a bug.
+  renderer.setClearColor(0x14100c, 1);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(container.clientWidth, container.clientHeight);
   container.appendChild(renderer.domElement);

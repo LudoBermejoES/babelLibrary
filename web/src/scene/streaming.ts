@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { GalleryBuffers, LibraryConfig, LibraryGallery } from '../wasm';
-import { horizontalNeighborsOf } from '../graph';
+import { horizontalNeighborsOf, verticalWrapGlimpses } from '../graph';
 import { appendAabbs, type Aabb } from '../controls/collide';
 import { buildGalleryArchitecture } from './gallery';
 import { buildGalleryInstances } from './instancing';
@@ -68,6 +68,14 @@ export class GalleryStreamer {
   private readonly bufferCache = new Map<number, GalleryBuffers>();
   private readonly instanceCounts = new Map<number, StreamedGalleryCounts>();
   private readonly vestibuleCounts = new Map<number, VestibuleCounts>();
+  /**
+   * Vertical-wrap glimpses (design D8), keyed by their unique group name. These
+   * render a wrapped-floor counterpart at an OFFSET position (not the
+   * gallery's canonical center), so they can't share the `liveGroups` map
+   * (which is keyed by canonical gallery index and assumes canonical
+   * placement). Rebuilt wholesale each `update` since the set is tiny (0–2).
+   */
+  private readonly liveWrapGlimpses = new Map<string, THREE.Group>();
 
   constructor(
     scene: THREE.Scene,
@@ -130,6 +138,11 @@ export class GalleryStreamer {
     return this.liveBuffers.has(index);
   }
 
+  /** Live vertical-wrap glimpse group names (design D8) — used by tests/debug to assert an edge floor's void shaft is filled by a wrapped counterpart. */
+  get wrapGlimpseNames(): ReadonlySet<string> {
+    return new Set(this.liveWrapGlimpses.keys());
+  }
+
   /** Recomputes membership for `currentIndex` and builds/disposes/upgrades/downgrades to match. No-op if nothing changed (doc 05 frame-loop note). */
   update(currentIndex: number): void {
     const { full, glimpse } = neededGalleryMembership(this.graph.galleries, currentIndex);
@@ -153,6 +166,79 @@ export class GalleryStreamer {
         this.build(index, 'glimpse');
       }
     }
+
+    this.reconcileWrapGlimpses(currentIndex);
+  }
+
+  /**
+   * Rebuilds the vertical-wrap glimpses (design D8) for the current gallery: a
+   * top-floor gallery shows floor 0's counterpart above; a bottom-floor
+   * gallery shows the top floor's counterpart below. Rendered at an offset
+   * center so an otherwise-void up/down shaft lands on the wrapped floor's
+   * hex instead of black. The set is 0–2 groups, so we dispose all and
+   * rebuild rather than diffing.
+   */
+  private reconcileWrapGlimpses(currentIndex: number): void {
+    for (const [name, group] of this.liveWrapGlimpses) {
+      this.disposeGroupGeometry(group);
+      this.scene.remove(group);
+      this.liveWrapGlimpses.delete(name);
+    }
+
+    const { config, galleries } = this.graph;
+    for (const wrap of verticalWrapGlimpses(galleries, currentIndex)) {
+      const counterpart = galleries[wrap.index];
+      if (!counterpart) continue;
+      // Render the counterpart at the CURRENT gallery's (q, r) column, offset
+      // one ceiling height up/down — so it appears directly through this
+      // gallery's shaft, not at the counterpart's own (identical q, r but the
+      // same world x/z anyway) canonical spot.
+      const [cx, , cz] = galleries[currentIndex]!.center;
+      const baseY = galleries[currentIndex]!.center[1];
+      const center: [number, number, number] = [cx, baseY + wrap.floorOffset * config.ceilingHeight, cz];
+      const name = `wrap-glimpse-${currentIndex}-${wrap.index}`;
+      const group = buildShaftGlimpse(counterpart, config, center);
+      group.name = name;
+      this.scene.add(group);
+      this.liveWrapGlimpses.set(name, group);
+    }
+
+    // Full-interior replica beyond the open shaft-opposite wall (design D7):
+    // that hex edge has no wall segment, so the sightline through it must land
+    // on a replicated gallery interior (walls + shelves), not a bare
+    // floor/ceiling slab seen edge-on. Build the current gallery's full
+    // architecture from its live buffers and translate the whole group one
+    // hex-width (2·apothem) along the shaft wall's outward normal, so it reads
+    // as "the identical gallery repeating outward" — the infinite-replication
+    // illusion the user asked for. Only the current gallery gets one (rebuilt
+    // on gallery change), so the cost is one extra full build, not per frame.
+    const current = galleries[currentIndex];
+    const currentBuffers = this.liveBuffers.get(currentIndex);
+    if (current && currentBuffers) {
+      const shaftWall = (current.vestibuleDirection + 3) % 6;
+      const angle = (Math.PI / 3) * shaftWall;
+      const apothem = (config.hexSide * Math.sqrt(3)) / 2;
+      const replica = buildGalleryArchitecture(current, currentBuffers, config);
+      replica.name = `wall3-replica-${currentIndex}`;
+      // Strip the nested gallery-N name so debug hooks don't mistake the
+      // replica for a real live gallery.
+      replica.position.set(Math.cos(angle) * apothem * 2, 0, Math.sin(angle) * apothem * 2);
+      this.scene.add(replica);
+      this.liveWrapGlimpses.set(replica.name, replica);
+    }
+  }
+
+  /** Frees per-gallery geometry + instance buffers in a group without touching the live-gallery bookkeeping — used for the wrap/replica glimpses, which live outside the `liveGroups` map. Mirrors `dispose()`'s rule: InstancedMesh.dispose() (own buffers only, never the shared geometry), geometry.dispose() for plain per-gallery meshes. */
+  private disposeGroupGeometry(group: THREE.Group): void {
+    group.traverse((obj) => {
+      const instanced = obj as THREE.InstancedMesh;
+      if (instanced.isInstancedMesh) {
+        instanced.dispose();
+        return;
+      }
+      const mesh = obj as THREE.Mesh;
+      if (mesh.isMesh) mesh.geometry.dispose();
+    });
   }
 
   private build(index: number, fidelity: Fidelity): void {

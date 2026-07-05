@@ -138,6 +138,37 @@ describe('GalleryStreamer', () => {
     expect(scene.getObjectByName(`gallery-${withVertical.index}`)).toBeUndefined();
   });
 
+  it('renders a vertical-wrap glimpse for an edge floor so its otherwise-void shaft lands on a wrapped counterpart (design D8)', async () => {
+    const books = fakeBooks(3500);
+    const { graph, getGallery } = await createLibrary(11n, books);
+    const floors = graph.galleries.map((g) => g.floor);
+    const maxFloor = Math.max(...floors);
+    const minFloor = Math.min(...floors);
+    expect(maxFloor).toBeGreaterThan(minFloor); // must actually be multi-floor
+
+    // A top-floor gallery (floorAbove === null) whose (q, r) also exists on
+    // the bottom floor — its up-shaft must show the wrapped bottom-floor
+    // counterpart, offset up one ceiling height.
+    const topEdge = graph.galleries.find(
+      (g) =>
+        g.floor === maxFloor &&
+        g.floorAbove === null &&
+        graph.galleries.some((o) => o.floor === minFloor && o.q === g.q && o.r === g.r),
+    );
+    expect(topEdge, 'expected a top-floor gallery with a bottom-floor counterpart').toBeDefined();
+
+    const scene = new THREE.Scene();
+    const streamer = new GalleryStreamer(scene, graph, getGallery);
+    streamer.update(topEdge!.index);
+
+    const wrapNames = [...streamer.wrapGlimpseNames];
+    expect(wrapNames.length).toBeGreaterThan(0);
+    const wrapGroup = scene.getObjectByName(wrapNames[0]!);
+    expect(wrapGroup).toBeDefined();
+    // Rendered ABOVE the current gallery (offset +1 ceiling height).
+    expect(wrapGroup!.children[0]!.position.y).toBeGreaterThan(topEdge!.center[1]);
+  });
+
   it('activeColliders unions the current gallery AND its live horizontal neighbors (doc 06: adjacent galleries in the active set)', async () => {
     const books = fakeBooks(3500);
     const { graph, getGallery } = await createLibrary(11n, books);

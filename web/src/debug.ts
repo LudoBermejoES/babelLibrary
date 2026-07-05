@@ -34,7 +34,18 @@ export interface BabelDebugHook {
   galleryCenter(index: number): [number, number, number] | null;
   /** Points the camera at a world position — lets e2e/visual checks control the view direction, since real mouse-look needs pointer lock (headless-blocked). */
   lookAt(x: number, y: number, z: number): void;
+  /**
+   * No-void survey (doc 09 §6, design D7/D8): stand in gallery `index`, aim the
+   * camera at one of the four sightlines that used to reveal black void, render
+   * a frame, and return the fraction (0..1) of near-black pixels in the canvas.
+   * The infinite library must show geometry down every sightline — a high
+   * fraction means a hole in the world.
+   */
+  surveyNearBlackFraction(index: number, view: SurveyView): number;
 }
+
+/** The four sightlines the no-void survey checks (design D7/D8). */
+export type SurveyView = 'vestibule' | 'wall3' | 'shaftUp' | 'shaftDown';
 
 declare global {
   interface Window {
@@ -149,7 +160,75 @@ export function installDebugHook(
     lookAt(x: number, y: number, z: number): void {
       camera.lookAt(x, y, z);
     },
+    surveyNearBlackFraction(index: number, view: SurveyView): number {
+      const gallery = graph.galleries[index];
+      if (!gallery) return 1;
+      const pose = player.standingPoseFor(index);
+      if (!pose) return 1;
+
+      // Stand at the gallery's eye pose (routes streaming + collider cache
+      // through the player like real entry does).
+      camera.position.set(pose.position[0], pose.position[1], pose.position[2]);
+      player.setTrackedGallery(index);
+
+      const [cx, , cz] = gallery.center;
+      const eyeY = pose.position[1];
+      const far = graph.config.hexSide * 6;
+
+      // Aim down the requested sightline. Horizontal views target a point one
+      // hex-width away along the wall normal; vertical views target straight
+      // up/down the shaft.
+      if (view === 'shaftUp') {
+        camera.lookAt(cx, eyeY + far, cz);
+      } else if (view === 'shaftDown') {
+        camera.lookAt(cx, eyeY - far, cz);
+      } else {
+        // Wall normal angle: vestibule wall for 'vestibule', the opposite wall
+        // (shaft-facing "wall 3") for 'wall3'. Wall w faces angle 60°·w in the
+        // (cos→x, sin→z) convention the generator emits.
+        const wall = view === 'vestibule' ? gallery.vestibuleDirection : (gallery.vestibuleDirection + 3) % 6;
+        const angle = (Math.PI / 3) * wall;
+        camera.lookAt(cx + Math.cos(angle) * far, eyeY, cz + Math.sin(angle) * far);
+      }
+
+      renderer.render(scene, camera);
+      return readNearBlackFraction(renderer);
+    },
   };
+}
+
+/**
+ * Fraction (0..1) of near-black pixels in the renderer's current framebuffer.
+ * Reads the WebGL canvas back through a 2D canvas (headless SwiftShader renders
+ * to it fine) and counts pixels whose max channel is below the near-black
+ * threshold. Fog is dark but non-black, so lit geometry — even a distant
+ * glimpse — reads well above it; true void (clear color) reads at/near 0.
+ */
+function readNearBlackFraction(renderer: THREE.WebGLRenderer): number {
+  const source = renderer.domElement;
+  const w = source.width;
+  const h = source.height;
+  const readback = document.createElement('canvas');
+  readback.width = w;
+  readback.height = h;
+  const ctx = readback.getContext('2d');
+  if (!ctx) return 1;
+  ctx.drawImage(source, 0, 0);
+  const { data } = ctx.getImageData(0, 0, w, h);
+
+  // The clear color is set to the fog color (renderer.ts), so far distance and
+  // genuine holes both fade to warm darkness — never pure black. Only pixels
+  // DARKER than that fog floor are true void (a hole the fog never tinted). The
+  // fog color 0x14100c is (20,16,12); a threshold of 6 sits well below every
+  // channel, so lit-but-dim and fogged-distant geometry never trip it, but an
+  // untinted pure-black hole (nothing rendered, no clear-color fill) would.
+  const NEAR_BLACK = 6;
+  let dark = 0;
+  const pixels = data.length / 4;
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i]! <= NEAR_BLACK && data[i + 1]! <= NEAR_BLACK && data[i + 2]! <= NEAR_BLACK) dark++;
+  }
+  return pixels === 0 ? 1 : dark / pixels;
 }
 
 export function isE2eMode(): boolean {

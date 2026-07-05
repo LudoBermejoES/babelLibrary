@@ -28,7 +28,14 @@ test('draw calls stay under budget and FPS holds up while crossing galleries wit
     await page.evaluate((index) => window.__babel!.setCurrentGallery(index), i);
   }
   await page.evaluate(() => window.__babel!.resetStats());
-  await page.waitForTimeout(500);
+  // Wait until the render loop has actually produced a rolling FPS minimum
+  // (needs >= 2 frames). A fixed timeout can elapse with zero frames rendered
+  // under full-parallel-suite CPU contention, leaving fps30sMin null — that is
+  // scheduler starvation, not an app stall, so poll for a real sample instead
+  // of asserting one appeared within an arbitrary window.
+  await page.waitForFunction(() => window.__babel!.stats.fps30sMin !== null, undefined, {
+    timeout: 10_000,
+  });
 
   const stats = await page.evaluate(() => window.__babel!.stats);
 

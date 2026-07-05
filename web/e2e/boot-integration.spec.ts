@@ -13,9 +13,12 @@ test('each gallery renders floor/ceiling + 4 shelf walls + 1 vestibule opening',
   await page.goto('/?e2e');
   await page.waitForFunction(() => window.__babel !== undefined);
 
-  // floor + ceiling (2) + 4 solid shelf walls (4) + vestibule opening (2 flanks + 1 lintel = 3) = 9.
+  // floor + ceiling + shaft well (3) + 4 solid shelf walls (4) + vestibule
+  // opening (2 flanks + 1 lintel = 3) = 10. The shaft well is the tall
+  // inner cylinder that stops the vertical shaft sightline from seeing
+  // through the aligned floor holes into void (design D8 / no-void gate).
   const meshCount = await page.evaluate(() => window.__babel!.wallMeshCountForGallery(0));
-  expect(meshCount).toBe(9);
+  expect(meshCount).toBe(10);
 });
 
 test('?seed= override changes the generated layout', async ({ page }) => {
