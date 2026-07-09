@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { LibraryConfig, LibraryGallery } from '../wasm';
-import { buildFloorAndCeiling, buildShaftWell } from './hex-shell';
+import { buildFloorAndCeiling } from './hex-shell';
 
 /**
  * Cheap "glimpse" geometry for a shaft-visible neighbor gallery: just the
@@ -13,6 +13,12 @@ import { buildFloorAndCeiling, buildShaftWell } from './hex-shell';
  * `center` defaults to the gallery's own center but can be overridden so the
  * vertical visual wrap (doc 05 / design D8) can render the wrapped floor's
  * counterpart offset by ±one ceiling height.
+ *
+ * Deliberately NO shaft well here: the current gallery's own well already
+ * spans many floors up and down (hex-shell.SHAFT_WELL_FLOORS), covering every
+ * glimpse's shaft. A well per glimpse would be a second cylinder at the same
+ * (x, z) and radius, offset by only one floor from the current gallery's — the
+ * two coincident DoubleSide surfaces z-fight down the whole shaft.
  */
 export function buildShaftGlimpse(
   gallery: LibraryGallery,
@@ -25,7 +31,6 @@ export function buildShaftGlimpse(
   const { floor, ceiling } = buildFloorAndCeiling(center, config);
   group.add(floor);
   group.add(ceiling);
-  group.add(buildShaftWell(center, config));
 
   return group;
 }

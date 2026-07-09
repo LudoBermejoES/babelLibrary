@@ -3,6 +3,7 @@ import type { GalleryBuffers, LibraryConfig, LibraryGallery } from '../wasm';
 import { horizontalNeighborsOf, verticalWrapGlimpses } from '../graph';
 import { appendAabbs, type Aabb } from '../controls/collide';
 import { buildGalleryArchitecture } from './gallery';
+import { buildEnclosingShell } from './hex-shell';
 import { buildGalleryInstances } from './instancing';
 import { buildGalleryLights } from './lighting';
 import { buildShaftGlimpse } from './shaft-visibility';
@@ -171,12 +172,21 @@ export class GalleryStreamer {
   }
 
   /**
-   * Rebuilds the vertical-wrap glimpses (design D8) for the current gallery: a
-   * top-floor gallery shows floor 0's counterpart above; a bottom-floor
-   * gallery shows the top floor's counterpart below. Rendered at an offset
-   * center so an otherwise-void up/down shaft lands on the wrapped floor's
-   * hex instead of black. The set is 0–2 groups, so we dispose all and
-   * rebuild rather than diffing.
+   * Rebuilds the current gallery's extra "no-void" geometry — the pieces that
+   * live outside the canonical per-gallery `liveGroups` map because they render
+   * at non-canonical positions:
+   *
+   * - Vertical-wrap glimpses (design D8): a top-floor gallery shows floor 0's
+   *   counterpart above, a bottom-floor gallery shows the top floor's below,
+   *   offset one ceiling height so an otherwise-void up/down shaft lands on the
+   *   wrapped floor's hex.
+   * - The enclosing shell (design D7, generalized): one large inward-facing
+   *   shell around the neighborhood at fog distance so every open horizontal /
+   *   oblique sightline (vestibule doorway, shaft-opposite gap, edge-gallery
+   *   directions with no neighbor) terminates on dim library, never void.
+   *
+   * All are keyed by unique name and rebuilt wholesale on gallery change (the
+   * set is tiny), so we dispose all and re-add rather than diffing.
    */
   private reconcileWrapGlimpses(currentIndex: number): void {
     for (const [name, group] of this.liveWrapGlimpses) {
@@ -203,28 +213,24 @@ export class GalleryStreamer {
       this.liveWrapGlimpses.set(name, group);
     }
 
-    // Full-interior replica beyond the open shaft-opposite wall (design D7):
-    // that hex edge has no wall segment, so the sightline through it must land
-    // on a replicated gallery interior (walls + shelves), not a bare
-    // floor/ceiling slab seen edge-on. Build the current gallery's full
-    // architecture from its live buffers and translate the whole group one
-    // hex-width (2·apothem) along the shaft wall's outward normal, so it reads
-    // as "the identical gallery repeating outward" — the infinite-replication
-    // illusion the user asked for. Only the current gallery gets one (rebuilt
-    // on gallery change), so the cost is one extra full build, not per frame.
+    // Enclosing horizontal backdrop (design D7, generalized): the library is
+    // infinite in every horizontal direction, so every OPEN sightline out of
+    // the current hexagon must terminate on dim library, never void. A hexagon's
+    // 4 shelf walls are solid, but the vestibule doorway and the shaft-opposite
+    // gap are open, and on edge galleries the doorway may face an unrendered
+    // cell — leaving a sightline straight to void. Per-direction replicas leaked
+    // (aligned openings chain into a tube) and cost too many draw calls. Instead
+    // we drop ONE large inward-facing shell around the whole current-gallery
+    // neighborhood at fog distance: any ray that escapes the real geometry hits
+    // it and reads as the library continuing into the dark. One draw call, can
+    // never leak, and matches the "fade into warm darkness" look. Centered on
+    // the current gallery, its own floor level.
     const current = galleries[currentIndex];
-    const currentBuffers = this.liveBuffers.get(currentIndex);
-    if (current && currentBuffers) {
-      const shaftWall = (current.vestibuleDirection + 3) % 6;
-      const angle = (Math.PI / 3) * shaftWall;
-      const apothem = (config.hexSide * Math.sqrt(3)) / 2;
-      const replica = buildGalleryArchitecture(current, currentBuffers, config);
-      replica.name = `wall3-replica-${currentIndex}`;
-      // Strip the nested gallery-N name so debug hooks don't mistake the
-      // replica for a real live gallery.
-      replica.position.set(Math.cos(angle) * apothem * 2, 0, Math.sin(angle) * apothem * 2);
-      this.scene.add(replica);
-      this.liveWrapGlimpses.set(replica.name, replica);
+    if (current) {
+      const shell = buildEnclosingShell(current.center, config);
+      shell.name = `enclosing-shell-${currentIndex}`;
+      this.scene.add(shell);
+      this.liveWrapGlimpses.set(shell.name, shell);
     }
   }
 
@@ -233,11 +239,20 @@ export class GalleryStreamer {
     group.traverse((obj) => {
       const instanced = obj as THREE.InstancedMesh;
       if (instanced.isInstancedMesh) {
+        // InstancedMeshes (books/shelves/lamps) share module-level singleton
+        // geometry from instancing.ts — disposing that geometry would rip the
+        // GPU buffers out from under every OTHER live gallery's instanced
+        // meshes (that was the original bug). InstancedMesh.dispose() frees only
+        // this mesh's own per-instance matrix/color buffers and leaves the
+        // shared geometry intact.
         instanced.dispose();
         return;
       }
       const mesh = obj as THREE.Mesh;
-      if (mesh.isMesh) mesh.geometry.dispose();
+      if (mesh.isMesh) mesh.geometry.dispose(); // per-gallery geometry (walls, floor, closets)
+      // Materials are shared across galleries (module-level singletons in
+      // assets.ts / hex-shell.ts) and never disposed here — disposing them would
+      // break every other live gallery using the same material.
     });
   }
 
@@ -278,24 +293,7 @@ export class GalleryStreamer {
     const group = this.liveGroups.get(index);
     if (!group) return;
 
-    group.traverse((obj) => {
-      const instanced = obj as THREE.InstancedMesh;
-      if (instanced.isInstancedMesh) {
-        // InstancedMeshes (books/shelves/lamps) share module-level singleton
-        // geometry from instancing.ts — disposing that geometry would rip
-        // the GPU buffers out from under every OTHER live gallery's
-        // instanced meshes (that was the bug). InstancedMesh.dispose() frees
-        // only this mesh's own per-instance matrix/color buffers, which is
-        // exactly what we want, and leaves the shared geometry intact.
-        instanced.dispose();
-        return;
-      }
-      const mesh = obj as THREE.Mesh;
-      if (mesh.isMesh) mesh.geometry.dispose(); // per-gallery geometry (walls, floor, closets)
-      // Materials are shared across galleries (module-level singletons in
-      // assets.ts / gallery.ts) and never disposed here — disposing them
-      // would break every other live gallery using the same material.
-    });
+    this.disposeGroupGeometry(group);
 
     this.scene.remove(group);
     this.liveGroups.delete(index);

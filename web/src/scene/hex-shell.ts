@@ -20,12 +20,23 @@ export const ceilingMaterial = new THREE.MeshStandardMaterial({
   roughness: 0.95,
   side: THREE.DoubleSide,
 });
-// Inner wall of the central shaft. BackSide so it's visible from inside the
-// tube (we look at its interior down the well). Shared like the other two.
+// Inner wall of the central shaft. DoubleSide so it's visible from inside the
+// tube (we look at its interior down the well) and doesn't vanish if the camera
+// briefly straddles the surface. Shared like the other two.
 export const shaftWellMaterial = new THREE.MeshStandardMaterial({
   color: 0x4a3c2a,
   roughness: 0.85,
   side: THREE.DoubleSide,
+});
+
+// Far enclosing shell (buildEnclosingShell). Very dark warm stone, BackSide so
+// only its interior renders (we are always inside it). Reads as the library
+// receding into darkness — any sightline that escapes the real geometry lands
+// here instead of on void.
+export const enclosingShellMaterial = new THREE.MeshStandardMaterial({
+  color: 0x2a2118,
+  roughness: 1,
+  side: THREE.BackSide,
 });
 
 // How many ceiling-heights the shaft well spans in each direction from a
@@ -117,4 +128,55 @@ export function buildShaftWell(
   // Centered on the gallery's own floor level; extends symmetrically up/down.
   mesh.position.set(cx, cy + config.ceilingHeight / 2, cz);
   return mesh;
+}
+
+// Enclosing shell radius/height, in gallery-widths / ceiling-heights. Big
+// enough to sit well beyond the current gallery + its immediate neighbors, so
+// it never intersects real geometry, but within fog range (FogExp2 density
+// 0.045 → effectively opaque by ~30-40m) so it reads as dark distance rather
+// than a visible wall. hexSide is 4m, so 8·hexSide ≈ 32m radius.
+const ENCLOSING_RADIUS_HEXES = 8;
+const ENCLOSING_HALF_HEIGHT_FLOORS = 10;
+
+/**
+ * A large inward-facing shell (cylinder wall + top/bottom caps) around the
+ * current gallery neighborhood. Any horizontal or oblique sightline that
+ * escapes the real (and replicated shaft/wrap) geometry terminates on this
+ * shell instead of on void — so an open vestibule doorway or shaft-opposite
+ * wall on an edge gallery shows the library receding into warm darkness, never
+ * a black (or, with the fog clear color, flat) hole. One draw call per cap +
+ * wall; BackSide so only the interior we stand in renders. Fog fades it to near
+ * the ambient darkness, so it never reads as a hard boundary. Freshly allocated
+ * per call; caller owns and disposes the geometry.
+ */
+export function buildEnclosingShell(
+  center: readonly [number, number, number],
+  config: LibraryConfig,
+): THREE.Group {
+  const [cx, cy, cz] = center;
+  const radius = config.hexSide * ENCLOSING_RADIUS_HEXES;
+  const halfHeight = config.ceilingHeight * ENCLOSING_HALF_HEIGHT_FLOORS;
+
+  const group = new THREE.Group();
+  group.name = 'enclosing-shell';
+
+  const wall = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius, radius, halfHeight * 2, 32, 1, true),
+    enclosingShellMaterial,
+  );
+  wall.position.set(cx, cy, cz);
+  group.add(wall);
+
+  // Top and bottom caps (discs) so a steep up/down look that clears the shaft
+  // well and floor holes still lands on the shell, not void above/below.
+  for (const sign of [1, -1] as const) {
+    const cap = new THREE.Mesh(new THREE.CircleGeometry(radius, 32), enclosingShellMaterial);
+    cap.position.set(cx, cy + sign * halfHeight, cz);
+    // CircleGeometry faces +z by default; rotate flat and orient its front face
+    // inward (down for the top cap, up for the bottom).
+    cap.rotation.x = sign * (Math.PI / 2);
+    group.add(cap);
+  }
+
+  return group;
 }

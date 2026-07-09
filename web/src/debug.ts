@@ -1,4 +1,4 @@
-import type * as THREE from 'three';
+import * as THREE from 'three';
 import type { LibraryGraph } from './wasm';
 import type { PlayerController } from './controls/player';
 import type { FpsTracker } from './scene/perf-stats';
@@ -36,12 +36,16 @@ export interface BabelDebugHook {
   lookAt(x: number, y: number, z: number): void;
   /**
    * No-void survey (doc 09 §6, design D7/D8): stand in gallery `index`, aim the
-   * camera at one of the four sightlines that used to reveal black void, render
-   * a frame, and return the fraction (0..1) of near-black pixels in the canvas.
-   * The infinite library must show geometry down every sightline — a high
-   * fraction means a hole in the world.
+   * camera at one of the four sightlines that used to reveal void, render a
+   * frame against a bright magenta sentinel clear color, and return the
+   * fraction (0..1) of the canvas that came back sentinel-colored — i.e.
+   * genuine void where a sightline hit no geometry. The infinite library must
+   * show geometry down every sightline, so a high fraction means a hole in the
+   * world. (Measures void directly via the sentinel, NOT darkness — production
+   * renders dark-but-real geometry that a brightness test could not tell from a
+   * fog-filled hole.)
    */
-  surveyNearBlackFraction(index: number, view: SurveyView): number;
+  surveyVoidFraction(index: number, view: SurveyView): number;
 }
 
 /** The four sightlines the no-void survey checks (design D7/D8). */
@@ -160,7 +164,7 @@ export function installDebugHook(
     lookAt(x: number, y: number, z: number): void {
       camera.lookAt(x, y, z);
     },
-    surveyNearBlackFraction(index: number, view: SurveyView): number {
+    surveyVoidFraction(index: number, view: SurveyView): number {
       const gallery = graph.galleries[index];
       if (!gallery) return 1;
       const pose = player.standingPoseFor(index);
@@ -191,20 +195,40 @@ export function installDebugHook(
         camera.lookAt(cx + Math.cos(angle) * far, eyeY, cz + Math.sin(angle) * far);
       }
 
+      // Render this survey frame with a bright SENTINEL clear color instead of
+      // production's fog clear color. Any pixel that comes back sentinel-colored
+      // is genuine void — a sightline that hit NO geometry — regardless of how
+      // dark the (intentionally dim, fog-tinted) real geometry is. This is what
+      // makes the gate meaningful: with the production fog clear color a hole
+      // fills with fog and is indistinguishable from dark-but-real geometry, so
+      // the survey could never see it. The sentinel is restored immediately.
+      const prevClear = new THREE.Color();
+      renderer.getClearColor(prevClear);
+      const prevAlpha = renderer.getClearAlpha();
+      renderer.setClearColor(SURVEY_SENTINEL, 1);
       renderer.render(scene, camera);
-      return readNearBlackFraction(renderer);
+      const fraction = readSentinelFraction(renderer);
+      renderer.setClearColor(prevClear, prevAlpha);
+      return fraction;
     },
   };
 }
 
+/** Bright magenta — a color no lit library surface (browns, warm lamp light, muted book spines) or dark fog ever produces, so a sentinel-matching pixel is unambiguously void. */
+const SURVEY_SENTINEL = 0xff00ff;
+
 /**
- * Fraction (0..1) of near-black pixels in the renderer's current framebuffer.
+ * Fraction (0..1) of VOID pixels in the renderer's current framebuffer, where
+ * the frame was rendered with the bright magenta {@link SURVEY_SENTINEL} clear
+ * color. A pixel that comes back magenta hit no geometry (the sentinel shows
+ * through) and is genuine void; everything else — lit stone, book spines, even
+ * distant fog-darkened geometry — is not magenta and counts as "filled".
  * Reads the WebGL canvas back through a 2D canvas (headless SwiftShader renders
- * to it fine) and counts pixels whose max channel is below the near-black
- * threshold. Fog is dark but non-black, so lit geometry — even a distant
- * glimpse — reads well above it; true void (clear color) reads at/near 0.
+ * to it fine). Tolerant match: tone mapping / sRGB shift the exact channel
+ * values, but sentinel void stays strongly red+blue with near-zero green,
+ * which no library surface reproduces.
  */
-function readNearBlackFraction(renderer: THREE.WebGLRenderer): number {
+function readSentinelFraction(renderer: THREE.WebGLRenderer): number {
   const source = renderer.domElement;
   const w = source.width;
   const h = source.height;
@@ -216,19 +240,18 @@ function readNearBlackFraction(renderer: THREE.WebGLRenderer): number {
   ctx.drawImage(source, 0, 0);
   const { data } = ctx.getImageData(0, 0, w, h);
 
-  // The clear color is set to the fog color (renderer.ts), so far distance and
-  // genuine holes both fade to warm darkness — never pure black. Only pixels
-  // DARKER than that fog floor are true void (a hole the fog never tinted). The
-  // fog color 0x14100c is (20,16,12); a threshold of 6 sits well below every
-  // channel, so lit-but-dim and fogged-distant geometry never trip it, but an
-  // untinted pure-black hole (nothing rendered, no clear-color fill) would.
-  const NEAR_BLACK = 6;
-  let dark = 0;
+  let voidPixels = 0;
   const pixels = data.length / 4;
   for (let i = 0; i < data.length; i += 4) {
-    if (data[i]! <= NEAR_BLACK && data[i + 1]! <= NEAR_BLACK && data[i + 2]! <= NEAR_BLACK) dark++;
+    const r = data[i]!;
+    const g = data[i + 1]!;
+    const b = data[i + 2]!;
+    // Magenta sentinel: high red AND high blue AND low green. Lamp light is
+    // warm (high red/green, low blue); stone/spines never combine high blue
+    // with near-zero green. Generous bounds absorb tone-map/sRGB drift.
+    if (r > 180 && b > 180 && g < 80) voidPixels++;
   }
-  return pixels === 0 ? 1 : dark / pixels;
+  return pixels === 0 ? 1 : voidPixels / pixels;
 }
 
 export function isE2eMode(): boolean {

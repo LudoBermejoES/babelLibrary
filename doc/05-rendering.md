@@ -56,28 +56,39 @@ Borges is explicit here: "the light they give is insufficient, and unceasing" �
 
 ## No black void — the library is infinite in every sightline
 
-The library is infinite and periodic; the player must never see a pure-black
-hole, only library fading into darkness. Four changes enforce this (verified by
-the `e2e/no-void.spec.ts` gate + `surveyNearBlackFraction` debug hook, which
-render a frame and count pixels darker than the fog floor):
+The library is infinite and periodic; the player must never see a hole, only
+library fading into darkness. Four changes enforce this. The gate is
+`e2e/no-void.spec.ts` + the `surveyVoidFraction` debug hook, which renders each
+surveyed sightline against a bright **magenta sentinel** clear color and counts
+sentinel-colored pixels — so it measures genuine void (a ray that hit no
+geometry) *directly*, independent of how dark the real geometry is. (A
+brightness test cannot work here: production's clear color is the fog color, so
+a fog-filled hole is pixel-identical to real dark-but-lit geometry.)
 
-1. **Renderer clear color = the fog color** (`renderer.setClearColor(0x14100c)`).
-   Any sightline that reaches past the rendered geometry fades into the *same*
-   warm darkness the fog produces, so "void" and "far distance" are visually
-   identical — the intended endless look, never a jarring black hole. This is
-   the decisive fix; without it, every uncovered pixel showed pure black.
+1. **Renderer clear color = the fog color** (`renderer.setClearColor(0x14100c)`,
+   production only). Any sightline that reaches past the rendered geometry fades
+   into the *same* warm darkness the fog produces, so "void" and "far distance"
+   are visually identical — the intended endless look, never a jarring black
+   hole. (The survey overrides this with the sentinel while measuring.)
 2. **Floor/ceiling hex shells are `DoubleSide`** (`scene/hex-shell.ts`). They
    were single-sided and got back-face-culled from the vertical shaft
    sightline, leaving the up/down view see-through to void. This was the true
    root cause of the "looking up the shaft is black" report.
 3. **Shaft well** (`buildShaftWell`): a tall inner cylinder around the central
    shaft so a straight up/down look lands on lit stone rather than passing
-   through the aligned floor holes of every stacked floor.
-4. **Wall-3 replica**: the shaft-opposite hex wall (`vestibule_direction + 3`)
-   is emitted as an *open gap* (no `wall_segments` entry). The streamer renders
-   a full-architecture replica of the current gallery, translated one hex-width
-   along that wall's outward normal, so the gap shows the room repeating
-   outward (the horizontal replication that models horizontal infinity).
+   through the aligned floor holes of every stacked floor. Glimpses do NOT build
+   their own well (the current gallery's already spans the column) — a second
+   offset well would z-fight it.
+4. **Enclosing shell** (`buildEnclosingShell`): the two open hex edges (the
+   vestibule doorway and the shaft-opposite gap), and on edge galleries the
+   doorway directions with no rendered neighbor, would otherwise show void down
+   an open sightline. Rather than per-direction replicas (which chain aligned
+   openings into a tube and cost too many draw calls), the streamer drops ONE
+   large inward-facing shell (a dark warm-stone cylinder + top/bottom caps) at
+   fog distance around the current-gallery neighborhood. Any ray that escapes
+   the real geometry terminates on it, reading as the library receding into
+   darkness. One reconciled group, rebuilt on gallery change, that can never
+   leak. This is the horizontal (and oblique) counterpart to the shaft well.
 
 ## Vertical visual wrap
 
